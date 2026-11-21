@@ -62,6 +62,6 @@ model-evaluation  pytorch  medical-imaging  experiment-tracking
 | 项 | 建议值 |
 |---|---|
 | 仓库名 | `cxr-2026-guosai`（或 `chest-xray-multilabel-2026`） |
-| 可见性 | Public（仓库已完成脱敏，不含机构与个人标识） |
-| License | MIT（代码部分） |
+| 可见性 | Public |
+| License | MIT |
 | 首次提交信息 | `init: 胸口多标签赛工作仓库（评测基建 + 10 项实验记录 + 训练/推理脚本）` |
