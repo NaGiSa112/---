@@ -30,7 +30,7 @@
 
 ---
 
-## 四、Topics 标签（GitHub 仓库设置里填）
+## 四、Topics 标签
 
 ```
 chest-x-ray  multi-label-classification  convnext  auc  reproducibility
