@@ -1,0 +1,111 @@
+{
+ "seed": 2026,
+ "n_folds": 5,
+ "checks": {
+  "studies_total": 18513,
+  "studies_unique": 18513,
+  "every_study_once": true,
+  "patients_split_across_folds": 0,
+  "patients_total": 11055,
+  "fold_ids": [
+   0,
+   1,
+   2,
+   3,
+   4
+  ],
+  "all_folds_present": true
+ },
+ "per_fold": [
+  {
+   "fold": 0,
+   "studies": 3712,
+   "patients": 2211,
+   "images": 6089,
+   "pos_patients": [
+    114,
+    118,
+    163,
+    257,
+    348,
+    558,
+    582,
+    659,
+    572,
+    1145
+   ]
+  },
+  {
+   "fold": 1,
+   "studies": 3689,
+   "patients": 2211,
+   "images": 6024,
+   "pos_patients": [
+    115,
+    118,
+    163,
+    257,
+    348,
+    559,
+    581,
+    659,
+    572,
+    1146
+   ]
+  },
+  {
+   "fold": 2,
+   "studies": 3706,
+   "patients": 2211,
+   "images": 6150,
+   "pos_patients": [
+    114,
+    118,
+    163,
+    257,
+    348,
+    558,
+    581,
+    659,
+    572,
+    1144
+   ]
+  },
+  {
+   "fold": 3,
+   "studies": 3695,
+   "patients": 2211,
+   "images": 6060,
+   "pos_patients": [
+    115,
+    119,
+    162,
+    257,
+    349,
+    559,
+    581,
+    659,
+    572,
+    1145
+   ]
+  },
+  {
+   "fold": 4,
+   "studies": 3711,
+   "patients": 2211,
+   "images": 6021,
+   "pos_patients": [
+    114,
+    119,
+    163,
+    256,
+    349,
+    558,
+    581,
+    659,
+    571,
+    1144
+   ]
+  }
+ ]
+}

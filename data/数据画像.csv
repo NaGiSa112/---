@@ -1,0 +1,11 @@
+﻿class,name,train_patients,valid_patients,train_rate,valid_rate
+1,Atelectasis,572,16,5.17,7.02
+2,Cardiomegaly,592,13,5.36,5.7
+3,Effusion,814,24,7.36,10.53
+4,Infiltration,1284,37,11.61,16.23
+5,Mass/Nodule,1742,34,15.76,14.91
+6,Pneumonia,2792,66,25.26,28.95
+7,Pneumothorax,2906,64,26.29,28.07
+8,Consolidation,3295,72,29.81,31.58
+9,Edema,2859,52,25.86,22.81
+10,No Finding,5724,166,51.78,72.81

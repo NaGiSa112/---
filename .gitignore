@@ -1,0 +1,19 @@
+# 大文件与运行产物 —— 不进仓库
+*.pt
+*.pth
+*.safetensors
+*.npy
+*.npz
+*.zip
+runs/
+releases/
+submissions/
+cache/
+cxr_first/
+.pylibs/
+.torch_home/
+05_github_exports/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.tmp/
