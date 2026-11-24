@@ -303,7 +303,9 @@ def train(cfg: TrainConfig):
     model = build_model(cfg.arch, pretrained=True, drop_path=cfg.drop_path,
                         n_aux=n_aux, n_view=n_view, final_norm=cfg.final_norm,
                         lse_alpha=cfg.lse_alpha, lse_tau=cfg.lse_tau,
-                  head_type=getattr(cfg, "head_type", "lse"), in_ch=in_ch).to(device)
+                  head_type=getattr(cfg, "head_type", "lse"), in_ch=in_ch,
+                  # timm 架构（SwinV2 等）必须按目标分辨率构造，否则默认 256 前向即崩
+                  img_size=int(getattr(cfg, "img_size", 0) or 0)).to(device)
     from torchvision.ops import StochasticDepth
     actual_sd = [m.p for m in model.modules() if isinstance(m, StochasticDepth)]
     if cfg.arch.startswith("convnext") and actual_sd:

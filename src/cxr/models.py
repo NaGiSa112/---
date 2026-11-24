@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import os
 
 import torch
 import torch.nn as nn
@@ -84,7 +85,7 @@ class CXRNet(nn.Module):
                  pretrained: bool = True, drop_path: float = 0.1, dropout: float = 0.2,
                  n_aux: int = 0, n_view: int = 0, final_norm: bool = False,
                  lse_alpha: float = 0.0, lse_tau: float = 1.0, head_type: str = "lse",
-                 in_ch: int = 1):
+                 in_ch: int = 1, img_size: int = 0):
         super().__init__()
         self.arch = arch
         self.n_aux = n_aux
@@ -100,7 +101,7 @@ class CXRNet(nn.Module):
         self.lse_tau = float(lse_tau)
         self.p_drop = float(dropout)
         self.backbone, feat_dim = _build_backbone(arch, pretrained, drop_path, final_norm,
-                                                  in_ch=in_ch)
+                                                  in_ch=in_ch, img_size=img_size)
         # n_view > 0 feeds the one-hot acquisition view (AP/PA/LATERAL/LL/other) into
         # the classifier. The view is otherwise only inferable from image appearance,
         # which is exactly where the "portable AP => abnormal" shortcut lives: AP films
@@ -196,8 +197,63 @@ class CXRNet(nn.Module):
         return z
 
 
+class _TimmSpatial(nn.Module):
+    """把 timm 模型包成统一形态：forward 返回池化向量，.features(x) 返回 B×C×H×W 空间图。
+
+    MetaFormer（CAFormer）与 SwinV2 的 forward_features 返回 NHWC，这里统一转成 BCHW，
+    这样 CXRNet 的 LSE 头与 torchvision 分支可以共用同一段代码。
+    """
+
+    def __init__(self, net: nn.Module):
+        super().__init__()
+        self.net = net
+        self.out_channels = _timm_out_channels(net)
+
+    def features(self, x):
+        f = self.net.forward_features(x)
+        if f.dim() == 4 and f.shape[-1] > f.shape[1]:
+            f = f.permute(0, 3, 1, 2)                 # NHWC -> BCHW
+        return f
+
+    def forward(self, x):
+        f = self.features(x)
+        return f.mean(dim=(2, 3))
+
+
+def _timm_out_channels(net: nn.Module) -> int:
+    for attr in ("num_features", "feature_dim", "embed_dim"):
+        v = getattr(net, attr, None)
+        if isinstance(v, int) and v > 0:
+            return v
+    for _, m in net.named_modules():
+        if isinstance(m, nn.Linear):
+            return int(m.in_features)
+    raise RuntimeError("cannot infer timm head features")
+
+
+def _adapt_first_conv_any(model: nn.Module, in_ch: int = 1) -> str:
+    """把模型里第一个 in_channels==3 的卷积改成 in_ch 通道（灰度或灰度+额外通道）。
+
+    比按属性名硬编码更稳：CAFormer 的 SepStem、SwinV2 的 patch_embed 结构名都不同。
+    """
+    for name, mod in model.named_modules():
+        if isinstance(mod, nn.Conv2d) and mod.in_channels == 3:
+            parts = name.split(".")
+            parent = model
+            for p in parts[:-1]:
+                parent = parent[int(p)] if p.isdigit() else getattr(parent, p)
+            leaf = parts[-1]
+            new = _adapt_first_conv(mod, in_ch)
+            if leaf.isdigit():
+                parent[int(leaf)] = new
+            else:
+                setattr(parent, leaf, new)
+            return name
+    raise RuntimeError("no 3-channel conv found for stem adaptation")
+
+
 def _build_backbone(arch: str, pretrained: bool, drop_path: float, final_norm: bool = False,
-                    in_ch: int = 1):
+                    in_ch: int = 1, img_size: int = 0):
     import torchvision as tv
 
     if final_norm and not arch.startswith("convnext"):
@@ -246,6 +302,48 @@ def _build_backbone(arch: str, pretrained: bool, drop_path: float, final_norm: b
         net.classifier = nn.Identity()
         return net, feat_dim
 
+    if arch.startswith(("caformer", "swinv2", "convnextv2", "maxvit", "coatnet")):
+        # timm 分支：MetaFormer / SwinV2 / ConvNeXtV2 等。预训练数据均为通用自然图像
+        # （ImageNet-22K / SAIL 蒸馏 / IN1K），不使用任何医学权重。
+        import timm
+        kw = dict(pretrained=pretrained, num_classes=0, drop_path_rate=drop_path)
+        # 云端常常连不上 huggingface.co（国内容器），但能连 modelscope.cn。
+        # 设 CXR_WEIGHTS_DIR 后，从 <dir>/<arch>/model.safetensors 直接加载，完全不走网络。
+        wdir = os.environ.get("CXR_WEIGHTS_DIR", "")
+        if pretrained and wdir:
+            for fn in ("model.safetensors", "pytorch_model.bin"):
+                cand = os.path.join(wdir, arch.replace("/", "_"), fn)
+                if os.path.exists(cand):
+                    kw["pretrained_cfg_overlay"] = {"file": cand}
+                    print(f"[backbone] 从本地权重加载 {os.path.basename(cand)} ← {cand}")
+                    break
+        # 并非所有 timm 架构都接受 img_size：MetaFormer 家族（CAFormer）没有位置编码，
+        # 其 __init__ 直接拒绝 img_size（实测 TypeError）；SwinV2 则**必须**按目标尺寸构造，
+        # 否则默认 256 会在 512/544 输入下报错。所以先试着带 img_size，不支持时再退回。
+        net = None
+        if img_size:
+            try:
+                net = timm.create_model(arch, img_size=int(img_size), **kw)
+            except TypeError as exc:
+                if "img_size" not in str(exc):
+                    raise
+                print(f"[backbone] {arch} 不接受 img_size，改用默认构造（训练时按实际输入前向）")
+        if net is None:
+            net = timm.create_model(arch, **kw)
+        # 保险：SwinV2 等带有可变的输入尺寸属性，若 create_model 没吃进 img_size，
+        # 这里再显式设置一次（否则前向时 input 512 vs model 256 会直接断言失败）。
+        if img_size and hasattr(net, "set_input_size"):
+            try:
+                cur = getattr(getattr(net, "patch_embed", None), "img_size", None)
+                if cur is None or int(cur[0]) != int(img_size):
+                    net.set_input_size((int(img_size), int(img_size)))
+                    print(f"[backbone] set_input_size -> {img_size}")
+            except Exception as exc:                       # noqa: BLE001
+                print(f"[backbone] set_input_size 失败（忽略）: {exc}")
+        stem = _adapt_first_conv_any(net, in_ch)
+        print(f"[backbone] timm {arch}  stem={stem}  in_ch={in_ch}  drop_path={drop_path}")
+        return _TimmSpatial(net), _timm_out_channels(net)
+
     raise ValueError(f"unknown arch {arch}")
 
 
@@ -268,10 +366,11 @@ def _set_drop_path(module: nn.Module, rate: float):
 def build_model(arch: str, pretrained: bool = True, drop_path: float = 0.1, dropout: float = 0.2,
                 n_aux: int = 0, n_view: int = 0, final_norm: bool = False,
                 lse_alpha: float = 0.0, lse_tau: float = 1.0, head_type: str = "lse",
-                in_ch: int = 1):
+                in_ch: int = 1, img_size: int = 0):
     return CXRNet(arch, NUM_CLASSES, pretrained=pretrained, drop_path=drop_path,
                   dropout=dropout, n_aux=n_aux, n_view=n_view, final_norm=final_norm,
-                  lse_alpha=lse_alpha, lse_tau=lse_tau, head_type=head_type, in_ch=in_ch)
+                  lse_alpha=lse_alpha, lse_tau=lse_tau, head_type=head_type, in_ch=in_ch,
+                  img_size=img_size)
 
 
 class ModelEMA:

@@ -81,6 +81,23 @@ class DonorModel(nn.Module):
         return out
 
 
+def _autocast_state():
+    """兼容 torch 2.4–2.9 的 autocast 查询接口。
+
+    torch 较新版本中 `is_autocast_enabled()` 需要 device_type 参数，较早版本不接受；
+    `get_autocast_dtype` 从 2.4 才提供。云上镜像（torch 2.5.1）与本地（2.9）都要能跑。
+    """
+    try:
+        enabled = bool(torch.is_autocast_enabled("cuda"))
+    except TypeError:
+        enabled = bool(torch.is_autocast_enabled())
+    try:
+        dtype = torch.get_autocast_dtype("cuda")
+    except (AttributeError, TypeError):
+        dtype = torch.bfloat16 if enabled else None
+    return enabled, dtype
+
+
 class GraphModel(nn.Module):
     """Replay a fixed-shape forward through a CUDA graph.
 
@@ -101,14 +118,19 @@ class GraphModel(nn.Module):
         static_in = x.detach().clone()
         side = torch.cuda.Stream()
         side.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(side), torch.no_grad():
-            for _ in range(4):
-                self.model(static_in)
-        torch.cuda.current_stream().wait_stream(side)
-        torch.cuda.synchronize()
-        graph = torch.cuda.CUDAGraph()
-        with torch.no_grad(), torch.cuda.graph(graph):
-            static_out = self.model(static_in)
+        amp_enabled, amp_dtype = _autocast_state()
+        # Cast weights inside capture; do not retain external autocast-cache addresses.
+        # 与交付包（11-13 冻结版 code/cxr/deploy.py）保持一致：缺这段 autocast 包裹会让
+        # bf16 数值路径偏移（实测 valid 宏 0.825355 vs 包内 0.825195）。
+        with torch.autocast("cuda", enabled=amp_enabled, dtype=amp_dtype, cache_enabled=False):
+            with torch.cuda.stream(side), torch.no_grad():
+                for _ in range(4):
+                    self.model(static_in)
+            torch.cuda.current_stream().wait_stream(side)
+            torch.cuda.synchronize()
+            graph = torch.cuda.CUDAGraph()
+            with torch.no_grad(), torch.cuda.graph(graph):
+                static_out = self.model(static_in)
         return static_in, static_out, graph
 
     def forward(self, x, view=None, return_aux: bool = False):

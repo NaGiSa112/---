@@ -1,0 +1,122 @@
+[
+ {
+  "repo": "timm/convnextv2_tiny.fcmae_ft_in22k_in1k",
+  "timm": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+  "license": "cc-by-nc-4.0",
+  "data": "ImageNet-22K + FCMAE 自监督",
+  "note": "非商用许可，需谨慎",
+  "params_m": 27.9,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/convnextv2_base.fcmae_ft_in22k_in1k",
+  "timm": "convnextv2_base.fcmae_ft_in22k_in1k",
+  "license": "cc-by-nc-4.0",
+  "data": "ImageNet-22K + FCMAE",
+  "note": "非商用许可；容量 ~3.8x Tiny",
+  "params_m": 87.7,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/caformer_s18.sail_in22k_ft_in1k",
+  "timm": "caformer_s18.sail_in22k_ft_in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-22K（SAIL 蒸馏预训练）",
+  "note": "MetaFormer + 深度可分离卷积",
+  "params_m": 24.3,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/maxvit_tiny_tf_224.in1k",
+  "timm": "maxvit_tiny_tf_224.in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-1K",
+  "note": "多轴注意力，归纳偏置不同",
+  "params_m": 30.4,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/maxvit_small_tf_224.in1k",
+  "timm": "maxvit_small_tf_224.in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-1K",
+  "note": "同上，容量更大",
+  "params_m": 68.2,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
+  "timm": "eva02_base_patch14_448.mim_in22k_ft_in22k_in1k",
+  "license": "mit",
+  "data": "ImageNet-22K + MIM",
+  "note": "强表征，但 448 输入很贵",
+  "params_m": 86.4,
+  "img": 448,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/swinv2_tiny_window16_256.ms_in1k",
+  "timm": "swinv2_tiny_window16_256.ms_in1k",
+  "license": "mit",
+  "data": "ImageNet-1K（ImageNet-21K 蒸馏）",
+  "note": "已测过 Swin-T v1 无增益",
+  "params_m": 27.6,
+  "img": 256,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/repvit_m2_3.dist_300e_in1k",
+  "timm": "repvit_m2_3.dist_300e_in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-1K（蒸馏）",
+  "note": "移动端，很快",
+  "params_m": 22.4,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/mobilenetv4_conv_medium.e500_r224_in1k",
+  "timm": "mobilenetv4_conv_medium.e500_r224_in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-1K",
+  "note": "很轻，容量可能不足",
+  "params_m": 8.4,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/efficientvit_b1.r288_in1k",
+  "timm": "efficientvit_b1.r288_in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-1K",
+  "note": "288 输入，效率高",
+  "params_m": 7.5,
+  "img": 288,
+  "top1": "—"
+ },
+ {
+  "repo": "timm/coatnet_1_rw_224.sw_in1k",
+  "timm": "coatnet_1_rw_224.sw_in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-1K（弱监督）",
+  "note": "卷积+注意力混合",
+  "params_m": 41.0,
+  "img": 224,
+  "top1": "—"
+ },
+ {
+  "repo": "(baseline) 我们现用",
+  "timm": "convnext_tiny.fb_in22k_ft_in1k",
+  "license": "apache-2.0",
+  "data": "ImageNet-22K",
+  "note": "当前基座",
+  "params_m": 27.8,
+  "img": 224,
+  "top1": "—"
+ }
+]

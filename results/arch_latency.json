@@ -1,0 +1,37 @@
+[
+ {
+  "arch": "convnext_tiny.fb_in22k_ft_in1k",
+  "img": 544,
+  "params_m": 27.8,
+  "ms": 14.5,
+  "mem_mb": 240.0
+ },
+ {
+  "arch": "caformer_s18.sail_in22k_ft_in1k",
+  "img": 544,
+  "params_m": 24.3,
+  "ms": 26.7,
+  "mem_mb": 239.0
+ },
+ {
+  "arch": "caformer_s36.sail_in22k_ft_in1k_384",
+  "img": 384,
+  "params_m": 37.3,
+  "ms": 51.5,
+  "mem_mb": 282.0
+ },
+ {
+  "arch": "convnextv2_tiny.fcmae_ft_in22k_in1k",
+  "img": 544,
+  "params_m": 27.9,
+  "ms": 20.8,
+  "mem_mb": 281.0
+ },
+ {
+  "arch": "efficientvit_b1.r288_in1k",
+  "img": 544,
+  "params_m": 7.5,
+  "ms": 28.8,
+  "mem_mb": 274.0
+ }
+]

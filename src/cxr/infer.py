@@ -91,7 +91,9 @@ def load_checkpoint(path: str, device="cpu"):
                           head_type=str(ckpt.get("cfg", {}).get("head_type", "lse")),
                           # 额外输入通道由 checkpoint 的配置决定，否则两通道权重会加载失败
                           in_ch=2 if str(ckpt.get("cfg", {}).get("extra_channel", "") or "") == "asym"
-                          else 1)
+                          else 1,
+                          # timm 架构（SwinV2 等）需要按训练时的输入尺寸构造
+                          img_size=int(ckpt.get("cfg", {}).get("img_size", 0) or 0))
     sd = ckpt.get("model", ckpt)
     # Tolerate extra tensors (a checkpoint trained with an auxiliary head that the current
     # architecture no longer builds) but never tolerate missing ones -- a missing key means
@@ -192,7 +194,8 @@ def to_pred_label(probs_row: np.ndarray, thr: dict) -> str:
 
 def write_submission(df: pd.DataFrame, probs: np.ndarray, path: str, thr: dict,
                      pred_label: bool = True, fmt: str = "official",
-                     lat_weight: float = 0.6, shrink: float = 0.85) -> pd.DataFrame:
+                     lat_weight: float = 0.6, shrink: float = 0.85,
+                     shrink_by_class: dict | None = None) -> pd.DataFrame:
     """Write the submission csv.
 
     fmt="official": the format required by the competition -- one row per
@@ -226,9 +229,20 @@ def write_submission(df: pd.DataFrame, probs: np.ndarray, path: str, thr: dict,
         g = d.groupby(["Subject_id", "Study_id"], as_index=False)[pcols].sum()
         wsum = pd.Series(w).groupby([df["Subject_id"].values, df["Study_id"].values]).sum()
         g[pcols] = g[pcols].div(wsum.values[:, None])
-        if shrink < 1.0:
-            pm = g.groupby("Subject_id")[pcols].transform("mean").values
-            g[pcols] = shrink * g[pcols].values + (1 - shrink) * pm
+        # 患者收缩：每类一个系数 a，p = a·p_study + (1−a)·p_患者均值。
+        # 统一从**收缩前**的检查级概率出发计算，避免全局与逐类叠加导致收缩两次。
+        # shrink_by_class={"2": 0.45} 表示只有类 2 用 0.45，其余沿用 shrink；
+        # 为空时 a 全等于 shrink，与旧实现逐位一致（见 tools/verify_perclass_shrink.py）。
+        a_vec = np.full(len(pcols), float(shrink))
+        if shrink_by_class:
+            for k, a_k in shrink_by_class.items():
+                i = int(k) - 1
+                if 0 <= i < len(pcols):
+                    a_vec[i] = float(a_k)
+        if (a_vec < 1.0).any():
+            g0 = g[pcols].values
+            pm0 = g.groupby("Subject_id")[pcols].transform("mean").values
+            g[pcols] = a_vec[None, :] * g0 + (1.0 - a_vec[None, :]) * pm0
         long = g.melt(id_vars=["Subject_id", "Study_id"], value_vars=pcols,
                       var_name="cls", value_name="Probability")
         long["Predict_class"] = long["cls"].str.lstrip("p").astype(int)

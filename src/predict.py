@@ -46,6 +46,8 @@ def main():
                     help="可选：另存一份逐图宽表（供 cost.py 逐样本核对）")
     ap.add_argument("--lat-weight", type=float, default=0.6)
     ap.add_argument("--shrink", type=float, default=0.85)
+    ap.add_argument("--shrink-by-class", default="",
+                    help='逐类收缩，形如 "2:0.45" 或 "2:0.45,5:0.9"；留空=全部用 --shrink')
     ap.add_argument("--batch-size", type=int, default=1,
                     help="1 keeps the numerics bit-identical to cost.py (rule 7 consistency)")
     a = ap.parse_args()
@@ -75,9 +77,18 @@ def main():
     thr = thresholds_for(a.deploy)
     if not thr:
         print("[warn] no thresholds.json found, falling back to 0.5")
+    sbc = {}
+    if a.shrink_by_class:
+        for part in a.shrink_by_class.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            k, v = part.split(":")
+            sbc[str(int(k))] = float(v)
     sub = write_submission(df, probs, a.out, thr, pred_label=not a.no_pred_label,
                            fmt=("official" if a.format == "official" else a.format),
-                           lat_weight=a.lat_weight, shrink=a.shrink)
+                           lat_weight=a.lat_weight, shrink=a.shrink,
+                           shrink_by_class=sbc)
     print(f"wrote {a.out} rows={len(sub)} cols={list(sub.columns)}")
     if a.wide_out:
         wide = write_submission(df, probs, a.wide_out, thr,
