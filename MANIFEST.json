@@ -426,6 +426,36 @@
   "src": "reports/E1E2v2_判读_swin_t.json"
  },
  {
+  "path": "docs/53_总复盘.md",
+  "bytes": 12852,
+  "sha256": "153d091ef912d7c083d5470e88094680592ebc06848cae0f533fe7988be69ec5",
+  "src": "04_新一轮/总复盘_2026-11-25.md"
+ },
+ {
+  "path": "docs/54_全部模型排名.md",
+  "bytes": 4363,
+  "sha256": "53d8dd112e9a3f0c2c97cfa70a2378590f8f7cb1bac502e6250cb75497010dfe",
+  "src": "reports/全部模型排名_2026-11-25.md"
+ },
+ {
+  "path": "data/全部模型排名.csv",
+  "bytes": 587,
+  "sha256": "c9b9749c055e0beace15dfdf783e30f02fcf117b38397b940bca493af268d10d",
+  "src": "reports/全部模型排名_2026-11-25.csv"
+ },
+ {
+  "path": "results/FINAL_PACKAGE_VERIFY.md",
+  "bytes": 3677,
+  "sha256": "543af731cf7ad07279b65241916f7c0748cc065aaf49b68941897d2b6c1fee60",
+  "src": "reports/FINAL_PACKAGE_VERIFY_2026-11-13.md"
+ },
+ {
+  "path": "results/FINAL_PACKAGE_VERIFY_2.md",
+  "bytes": 4380,
+  "sha256": "71b82475e1c3b5ded29a11d5879f8db911930b719d492b96527759c23f9bc98d",
+  "src": "reports/FINAL_PACKAGE_VERIFY_2026-11-13_第二轮.md"
+ },
+ {
   "path": "data/patient_folds_5f.json",
   "bytes": 1394,
   "sha256": "14e5179e28d5fa15c1ee06e36c30d8848e884c5d77722f361e1f5ba23c8545b7",
@@ -691,8 +721,8 @@
  },
  {
   "path": "tools/make_github_package.py",
-  "bytes": 11579,
-  "sha256": "79f43f0f6881786334f078e7673c20d7930eea5704630cefdd3be09f1aed229d",
+  "bytes": 12056,
+  "sha256": "fa0d367c5f1ef6fffc5f1cb67406b8c0d5aa44da40b995d0ea0e1f50e259b255",
   "src": "tools/make_github_package.py"
  },
  {

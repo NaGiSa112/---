@@ -1,14 +1,14 @@
 # MANIFEST
 
-共 **128** 个文件，合计 **5721.8 KB**。
+共 **133** 个文件，合计 **5747.5 KB**。
 
 | 目录 | 文件数 | 大小 |
 |---|---:|---:|
-| `data/` | 8 | 4994.6 KB |
-| `docs/` | 46 | 277.2 KB |
-| `results/` | 18 | 30.2 KB |
+| `data/` | 9 | 4995.2 KB |
+| `docs/` | 48 | 294.0 KB |
+| `results/` | 20 | 38.1 KB |
 | `src/` | 12 | 117.3 KB |
-| `tools/` | 44 | 302.3 KB |
+| `tools/` | 44 | 302.8 KB |
 
 ## 逐文件 SHA-256
 
@@ -18,6 +18,7 @@
 | `data/patient_folds_5f.csv` | 536906 | `5b0cf113345adb4385089a8ee694dad6…` |
 | `data/patient_folds_5f.json` | 1394 | `14e5179e28d5fa15c1ee06e36c30d884…` |
 | `data/teacher_soft_full_a.csv` | 4570584 | `eddc64345a6fadd5c2edfc06bda69ad2…` |
+| `data/全部模型排名.csv` | 587 | `c9b9749c055e0beace15dfdf783e30f0…` |
 | `data/初赛前100名.csv` | 1002 | `6ff6a9eeb564412f872b54a70515d23c…` |
 | `data/弱类排序.csv` | 1717 | `e2bdd2d55b52634b4a7a54a8b2f767f6…` |
 | `data/数据画像.csv` | 403 | `d8aeacb94326177f1e7b76cc341916ee…` |
@@ -68,12 +69,16 @@
 | `docs/50_后处理网格.md` | 1659 | `80c4c85a3d9e8bcfcb430f25381dd334…` |
 | `docs/51_交付演练.md` | 305 | `facc4e18d8ccffd09f524ae77af74673…` |
 | `docs/52_Transformer轴结论.md` | 4950 | `adaf2501d559fdfdfdcc3e3c8ef31ff1…` |
+| `docs/53_总复盘.md` | 12852 | `153d091ef912d7c083d5470e88094680…` |
+| `docs/54_全部模型排名.md` | 4363 | `53d8dd112e9a3f0c2c97cfa70a237859…` |
 | `results/E1E2v1_caformer.json` | 1109 | `0d0188c594a2b309d0e3cea8a445b6e5…` |
 | `results/E1E2v1_caformer.md` | 1358 | `05b1de36917a9d1c3187909ea02a1d25…` |
 | `results/E1E2v2_caformer.json` | 1230 | `30e0276dd8436c74cfbe5cecabe56c41…` |
 | `results/E1E2v2_caformer.md` | 1437 | `bc2af88656cd6ace2a9224928b7873b4…` |
 | `results/E1E2v2_swin_t.json` | 1229 | `7c842cad1f971e74d0f984ead74a6ae4…` |
 | `results/E1E2v2_swin_t.md` | 1439 | `0fa0e298b6e5a23cfc56452d571f734d…` |
+| `results/FINAL_PACKAGE_VERIFY.md` | 3677 | `543af731cf7ad07279b65241916f7c07…` |
+| `results/FINAL_PACKAGE_VERIFY_2.md` | 4380 | `71b82475e1c3b5ded29a11d5879f8db9…` |
 | `results/arch_latency.json` | 628 | `44502ed9d0906282b93e186e4fdfc0dc…` |
 | `results/baseline_audit.json` | 1104 | `0832f1dce2b4be46782e182af39ae1a3…` |
 | `results/border_ablation.json` | 911 | `ef4ad1c0bc5646d6727a0ecc20500ede…` |
@@ -125,7 +130,7 @@
 | `tools/evidence_outside_body.py` | 7984 | `28d980aaace7ac26966b3582e7848dc5…` |
 | `tools/fit_per_class_shrink.py` | 7149 | `55f4b8279283d3cac7a205a11135e570…` |
 | `tools/heatmap_probe.py` | 9943 | `86e955171be3b74dc0366c51111df959…` |
-| `tools/make_github_package.py` | 11579 | `79f43f0f6881786334f078e7673c20d7…` |
+| `tools/make_github_package.py` | 12056 | `fa0d367c5f1ef6fffc5f1cb67406b8c0…` |
 | `tools/make_heatmap_compare.py` | 7137 | `7f06edb250a79802d39557775dc89718…` |
 | `tools/make_patient_folds.py` | 6486 | `08e2d30eb099bf4f42aa1e8b0b33fbd4…` |
 | `tools/make_probs_from_ckpt.py` | 4243 | `7ce510d06c07315183ce8fec38ac058b…` |

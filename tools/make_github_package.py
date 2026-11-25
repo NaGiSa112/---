@@ -102,6 +102,12 @@ FILES = [
     ("reports/Transformer轴结论_2026-11-24.md", "docs/52_Transformer轴结论.md"),
     ("reports/E1E2v2_判读_swin_t.md", "results/E1E2v2_swin_t.md"),
     ("reports/E1E2v2_判读_swin_t.json", "results/E1E2v2_swin_t.json"),
+    # ---- 总复盘与排名（2026-11-25）----
+    ("04_新一轮/总复盘_2026-11-25.md", "docs/53_总复盘.md"),
+    ("reports/全部模型排名_2026-11-25.md", "docs/54_全部模型排名.md"),
+    ("reports/全部模型排名_2026-11-25.csv", "data/全部模型排名.csv"),
+    ("reports/FINAL_PACKAGE_VERIFY_2026-11-13.md", "results/FINAL_PACKAGE_VERIFY.md"),
+    ("reports/FINAL_PACKAGE_VERIFY_2026-11-13_第二轮.md", "results/FINAL_PACKAGE_VERIFY_2.md"),
     # ---- 小数据 ----
     ("04_新一轮/00_规则/patient_folds_5f.json", "data/patient_folds_5f.json"),
     ("04_新一轮/初赛前100名_2026-11-21.csv", "data/初赛前100名.csv"),

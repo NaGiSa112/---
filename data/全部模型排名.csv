@@ -1,0 +1,7 @@
+﻿模型,角色,检查级宏 AUC,输入,蒸馏,来源
+tiny_seed44_last12,交付成员,0.8199734367550414,544/384,有,member_strength.json
+cnxt512_pat_s43_e12,交付成员,0.8190564925341814,544/384,有,member_strength.json
+cnxt512_pat_e12,交付成员,0.818921399877787,544/384,有,member_strength.json
+donor_v21,交付成员（供体）,0.812876318528699,544/384,–,member_strength.json
+Swin-T (swin_b4),候选（未采纳）,0.8112638220696891,512,有,E1E2v2_判读_swin_t.json
+CAFormer-S18 (12轮),候选（未采纳）,0.8007661175969363,544,无,E1E2v2_判读_caformer.json
