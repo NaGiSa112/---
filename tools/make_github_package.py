@@ -95,6 +95,13 @@ FILES = [
     ("tools/postproc_grid.py", "tools/postproc_grid.py"),
     ("reports/E1E2_判读_caformer_2026-11-24.md", "results/E1E2v1_caformer.md"),
     ("reports/E1E2_判读_caformer_2026-11-24.json", "results/E1E2v1_caformer.json"),
+    # ---- 计划与演练（2026-11-25）----
+    ("04_新一轮/后续计划总览_2026-11-25.md", "docs/00b_后续计划总览.md"),
+    ("04_新一轮/GPU240小时编排_2026-11-25.md", "docs/44b_GPU240小时编排.md"),
+    ("reports/交付演练_2026-11-25.md", "docs/51_交付演练.md"),
+    ("reports/Transformer轴结论_2026-11-24.md", "docs/52_Transformer轴结论.md"),
+    ("reports/E1E2v2_判读_swin_t.md", "results/E1E2v2_swin_t.md"),
+    ("reports/E1E2v2_判读_swin_t.json", "results/E1E2v2_swin_t.json"),
     # ---- 小数据 ----
     ("04_新一轮/00_规则/patient_folds_5f.json", "data/patient_folds_5f.json"),
     ("04_新一轮/初赛前100名_2026-11-21.csv", "data/初赛前100名.csv"),
