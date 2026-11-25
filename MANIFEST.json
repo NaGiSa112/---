@@ -427,8 +427,8 @@
  },
  {
   "path": "docs/53_总复盘.md",
-  "bytes": 12852,
-  "sha256": "153d091ef912d7c083d5470e88094680592ebc06848cae0f533fe7988be69ec5",
+  "bytes": 13217,
+  "sha256": "dd6f702210516e7abe47e36d5c4312e923d1e9575562a0be6ace70cbb0cf22a6",
   "src": "04_新一轮/总复盘_2026-11-25.md"
  },
  {
@@ -454,6 +454,18 @@
   "bytes": 4380,
   "sha256": "71b82475e1c3b5ded29a11d5879f8db911930b719d492b96527759c23f9bc98d",
   "src": "reports/FINAL_PACKAGE_VERIFY_2026-11-13_第二轮.md"
+ },
+ {
+  "path": "docs/55_测试结果.md",
+  "bytes": 5570,
+  "sha256": "bc5d470e58ec77719c4543fbb5bf9b32b28f37d311bb5704417c1934ba212fa1",
+  "src": "reports/测试结果_基线差与延迟_2026-11-25.md"
+ },
+ {
+  "path": "results/baseline_gap.json",
+  "bytes": 1372,
+  "sha256": "f999ee86e40a4cb71b9a8ecf1bb4aa4767cf6db50e6242e821dc149441b20156",
+  "src": "reports/baseline_gap.json"
  },
  {
   "path": "data/patient_folds_5f.json",
@@ -721,8 +733,8 @@
  },
  {
   "path": "tools/make_github_package.py",
-  "bytes": 12056,
-  "sha256": "fa0d367c5f1ef6fffc5f1cb67406b8c0d5aa44da40b995d0ea0e1f50e259b255",
+  "bytes": 12212,
+  "sha256": "08a8a164b966122493b8f571e4d2bdc7a6228cd6e8f730e5fea9cd7acc310231",
   "src": "tools/make_github_package.py"
  },
  {

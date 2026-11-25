@@ -1,14 +1,14 @@
 # MANIFEST
 
-共 **133** 个文件，合计 **5747.5 KB**。
+共 **135** 个文件，合计 **5754.8 KB**。
 
 | 目录 | 文件数 | 大小 |
 |---|---:|---:|
 | `data/` | 9 | 4995.2 KB |
-| `docs/` | 48 | 294.0 KB |
-| `results/` | 20 | 38.1 KB |
+| `docs/` | 49 | 299.8 KB |
+| `results/` | 21 | 39.4 KB |
 | `src/` | 12 | 117.3 KB |
-| `tools/` | 44 | 302.8 KB |
+| `tools/` | 44 | 302.9 KB |
 
 ## 逐文件 SHA-256
 
@@ -69,8 +69,9 @@
 | `docs/50_后处理网格.md` | 1659 | `80c4c85a3d9e8bcfcb430f25381dd334…` |
 | `docs/51_交付演练.md` | 305 | `facc4e18d8ccffd09f524ae77af74673…` |
 | `docs/52_Transformer轴结论.md` | 4950 | `adaf2501d559fdfdfdcc3e3c8ef31ff1…` |
-| `docs/53_总复盘.md` | 12852 | `153d091ef912d7c083d5470e88094680…` |
+| `docs/53_总复盘.md` | 13217 | `dd6f702210516e7abe47e36d5c4312e9…` |
 | `docs/54_全部模型排名.md` | 4363 | `53d8dd112e9a3f0c2c97cfa70a237859…` |
+| `docs/55_测试结果.md` | 5570 | `bc5d470e58ec77719c4543fbb5bf9b32…` |
 | `results/E1E2v1_caformer.json` | 1109 | `0d0188c594a2b309d0e3cea8a445b6e5…` |
 | `results/E1E2v1_caformer.md` | 1358 | `05b1de36917a9d1c3187909ea02a1d25…` |
 | `results/E1E2v2_caformer.json` | 1230 | `30e0276dd8436c74cfbe5cecabe56c41…` |
@@ -81,6 +82,7 @@
 | `results/FINAL_PACKAGE_VERIFY_2.md` | 4380 | `71b82475e1c3b5ded29a11d5879f8db9…` |
 | `results/arch_latency.json` | 628 | `44502ed9d0906282b93e186e4fdfc0dc…` |
 | `results/baseline_audit.json` | 1104 | `0832f1dce2b4be46782e182af39ae1a3…` |
+| `results/baseline_gap.json` | 1372 | `f999ee86e40a4cb71b9a8ecf1bb4aa47…` |
 | `results/border_ablation.json` | 911 | `ef4ad1c0bc5646d6727a0ecc20500ede…` |
 | `results/class2_audit.json` | 5851 | `7637d67634ffae78eb9097c22a051ce3…` |
 | `results/context_audit.json` | 939 | `e0660190282e2c863d24dcf1feb70e3c…` |
@@ -130,7 +132,7 @@
 | `tools/evidence_outside_body.py` | 7984 | `28d980aaace7ac26966b3582e7848dc5…` |
 | `tools/fit_per_class_shrink.py` | 7149 | `55f4b8279283d3cac7a205a11135e570…` |
 | `tools/heatmap_probe.py` | 9943 | `86e955171be3b74dc0366c51111df959…` |
-| `tools/make_github_package.py` | 12056 | `fa0d367c5f1ef6fffc5f1cb67406b8c0…` |
+| `tools/make_github_package.py` | 12212 | `08a8a164b966122493b8f571e4d2bdc7…` |
 | `tools/make_heatmap_compare.py` | 7137 | `7f06edb250a79802d39557775dc89718…` |
 | `tools/make_patient_folds.py` | 6486 | `08e2d30eb099bf4f42aa1e8b0b33fbd4…` |
 | `tools/make_probs_from_ckpt.py` | 4243 | `7ce510d06c07315183ce8fec38ac058b…` |
