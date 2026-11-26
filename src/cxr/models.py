@@ -302,7 +302,28 @@ def _build_backbone(arch: str, pretrained: bool, drop_path: float, final_norm: b
         net.classifier = nn.Identity()
         return net, feat_dim
 
-    if arch.startswith(("caformer", "swinv2", "convnextv2", "maxvit", "coatnet")):
+    if arch.startswith(("efficientvit", "repvit")):
+        # T1 异构骨干（双 6 GB 卡筛查）：EfficientViT-B1 / RepViT-M0.9。
+        # 这两个 timm 构造器实测**拒绝** drop_path_rate 与 img_size（TypeError），
+        # 所以不能走下面 MetaFormer 的分支，需单独构造并把实际配置打到日志里。
+        # 注意 HRNet-W18 两者都接受，走下面正常分支即可（drop_path 真实生效）。
+        import timm
+        kw = dict(pretrained=pretrained, num_classes=0)
+        wdir = os.environ.get("CXR_WEIGHTS_DIR", "")
+        if pretrained and wdir:
+            for fn in ("model.safetensors", "pytorch_model.bin"):
+                cand = os.path.join(wdir, arch.replace("/", "_"), fn)
+                if os.path.exists(cand):
+                    kw["pretrained_cfg_overlay"] = {"file": cand}
+                    print(f"[backbone] 从本地权重加载 {os.path.basename(cand)} ← {cand}")
+                    break
+        net = timm.create_model(arch, **kw)
+        stem = _adapt_first_conv_any(net, in_ch)
+        print(f"[backbone] timm {arch}  stem={stem}  in_ch={in_ch}  "
+              f"drop_path=未传入（构造器不支持 drop_path_rate）")
+        return _TimmSpatial(net), _timm_out_channels(net)
+
+    if arch.startswith(("caformer", "swinv2", "convnextv2", "maxvit", "coatnet", "hrnet")):
         # timm 分支：MetaFormer / SwinV2 / ConvNeXtV2 等。预训练数据均为通用自然图像
         # （ImageNet-22K / SAIL 蒸馏 / IN1K），不使用任何医学权重。
         import timm

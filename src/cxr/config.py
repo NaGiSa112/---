@@ -90,6 +90,7 @@ class TrainConfig:
     cache_size: int = 448
     epochs: int = 12
     batch_size: int = 32
+    accum_steps: int = 1        # 梯度累积次数：等效批量 = batch_size × accum_steps（T1 协议要求等效 16）
     lr_head: float = 1e-3
     lr_backbone: float = 1e-4
     weight_decay: float = 0.05

@@ -1,0 +1,895 @@
+# T1 补丁（HRNet-W18 fold2）
+# 基线：main 的 9d46cc4（三个 pre-image 哈希如下）。
+# 说明：teammates/6gb-model-screening 现在在 cf3efaa，比本基线只多一行
+#       （src/cxr/train.py 增加 --hflip 参数），本补丁已在该提交上验证可干净应用。
+# 应用前先核对 pre-image：
+#   7c08206f18eed9c148737e3aa91586054771f95baf78c8d94028cacef6c47a07  src/cxr/models.py
+#   9e7e8f24a4739fe0d886ff1a2e2d10a20cac293277b87e9e3327d378bb058f59  src/cxr/train.py
+#   5d2e03c6cea648635ac31ab8bd1306472d2355715ebc52a65247be6163066704  src/cxr/config.py
+
+diff --git a/src/cxr/models.py b/src/cxr/models.py
+--- a/src/cxr/models.py
++++ b/src/cxr/models.py
+@@ -302,7 +302,28 @@
+         net.classifier = nn.Identity()
+         return net, feat_dim
+ 
+-    if arch.startswith(("caformer", "swinv2", "convnextv2", "maxvit", "coatnet")):
++    if arch.startswith(("efficientvit", "repvit")):
++        # T1 异构骨干（双 6 GB 卡筛查）：EfficientViT-B1 / RepViT-M0.9。
++        # 这两个 timm 构造器实测**拒绝** drop_path_rate 与 img_size（TypeError），
++        # 所以不能走下面 MetaFormer 的分支，需单独构造并把实际配置打到日志里。
++        # 注意 HRNet-W18 两者都接受，走下面正常分支即可（drop_path 真实生效）。
++        import timm
++        kw = dict(pretrained=pretrained, num_classes=0)
++        wdir = os.environ.get("CXR_WEIGHTS_DIR", "")
++        if pretrained and wdir:
++            for fn in ("model.safetensors", "pytorch_model.bin"):
++                cand = os.path.join(wdir, arch.replace("/", "_"), fn)
++                if os.path.exists(cand):
++                    kw["pretrained_cfg_overlay"] = {"file": cand}
++                    print(f"[backbone] 从本地权重加载 {os.path.basename(cand)} ← {cand}")
++                    break
++        net = timm.create_model(arch, **kw)
++        stem = _adapt_first_conv_any(net, in_ch)
++        print(f"[backbone] timm {arch}  stem={stem}  in_ch={in_ch}  "
++              f"drop_path=未传入（构造器不支持 drop_path_rate）")
++        return _TimmSpatial(net), _timm_out_channels(net)
++
++    if arch.startswith(("caformer", "swinv2", "convnextv2", "maxvit", "coatnet", "hrnet")):
+         # timm 分支：MetaFormer / SwinV2 / ConvNeXtV2 等。预训练数据均为通用自然图像
+         # （ImageNet-22K / SAIL 蒸馏 / IN1K），不使用任何医学权重。
+         import timm
+diff --git a/src/cxr/train.py b/src/cxr/train.py
+--- a/src/cxr/train.py
++++ b/src/cxr/train.py
+@@ -354,10 +354,19 @@
+     pos_weight = torch.tensor(pw, dtype=torch.float32, device=device)
+ 
+     opt = make_optimizer(model, cfg)
+-    steps_per_epoch = len(dl_tr)
+-    total_steps = cfg.max_iters if cfg.max_iters > 0 else cfg.epochs * steps_per_epoch
+-    sched = CosineSchedule(opt, int(cfg.warmup_epochs * steps_per_epoch), total_steps,
++    n_micro = len(dl_tr)
++    accum = max(1, int(getattr(cfg, "accum_steps", 1) or 1))
++    steps_per_epoch = n_micro                      # 物理前向次数（日志用）
++    opt_steps_per_epoch = math.ceil(n_micro / accum)
++    total_steps = cfg.max_iters if cfg.max_iters > 0 else cfg.epochs * opt_steps_per_epoch
++    # 梯度累积下 warmup 与 cosine 都按**优化器步**推进（T1 协议要求）
++    sched = CosineSchedule(opt, int(cfg.warmup_epochs * opt_steps_per_epoch), total_steps,
+                            [cfg.lr_backbone, cfg.lr_head])
++    if accum > 1:
++        print(f"[train] grad accumulation: 物理 batch {cfg.batch_size} × {accum} = "
++              f"等效 {cfg.batch_size * accum}；每轮 {n_micro} 个微批 -> "
++              f"{opt_steps_per_epoch} 个优化器步；BatchNorm 统计与 Mixup 配对按物理批量 "
++              f"{cfg.batch_size} 决定；每轮末尾不足一组的按实际微批数归一化", flush=True)
+     ema = ModelEMA(model, cfg.ema_decay) if cfg.ema_decay > 0 else None
+     amp_dtype = torch.bfloat16 if cfg.amp == "bf16" else (torch.float16 if cfg.amp == "fp16" else None)
+     # torch.amp.GradScaler 是 2.3+ 的写法；torch 2.1/2.2（AutoDL 的 V100 镜像）只有
+@@ -487,22 +496,32 @@
+                     logits2 = model(x2, view=view_in)
+                     loss = loss + float(cfg.view_consistency) * torch.nn.functional.mse_loss(
+                         torch.sigmoid(logits.float()), torch.sigmoid(logits2.float()))
+-            opt.zero_grad(set_to_none=True)
+-            scaler.scale(loss).backward()
+-            if cfg.grad_clip > 0:
+-                scaler.unscale_(opt)
+-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+-            scaler.step(opt)
+-            scaler.update()
+-            sched.step()
+-            if ema:
+-                ema.update(model)
++            # ---- 梯度累积：组内每个微批的损失先除以「本组实际微批数」再反传 ----
++            # 这样一组梯度的和 = 组内样本平均损失的梯度（而不是微批损失的简单相加）。
++            # drop_last=True 保证每个微批都是满的，所以组内样本数 = 微批数 × 物理批量；
++            # 每轮末尾若不足 accum 个微批，g_micro 会按实际数量归一化，不会被稀释。
++            idx = it - 1
++            g_start = (idx // accum) * accum
++            g_micro = min(accum, n_micro - g_start)
++            is_opt_step = ((idx % accum) + 1) >= g_micro
++            scaler.scale(loss * (1.0 / g_micro)).backward()
+             run_loss += loss.item()
+             n_batches += 1
+-            global_step += 1
++            if is_opt_step:
++                if cfg.grad_clip > 0:
++                    scaler.unscale_(opt)
++                    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
++                scaler.step(opt)
++                scaler.update()
++                opt.zero_grad(set_to_none=True)
++                sched.step()               # 按优化器步推进，不是按微批
++                if ema:
++                    ema.update(model)
++                global_step += 1
+             if it % 100 == 0:
+-                print(f"  e{epoch} {it}/{steps_per_epoch} loss={run_loss/n_batches:.4f} "
+-                      f"lr={opt.param_groups[0]['lr']:.2e} {time.time()-t0:.0f}s", flush=True)
++                print(f"  e{epoch} {it}/{steps_per_epoch} opt_step={global_step} "
++                      f"loss={run_loss/n_batches:.4f} lr={opt.param_groups[0]['lr']:.2e} "
++                      f"{time.time()-t0:.0f}s", flush=True)
+             if cfg.max_iters > 0 and global_step >= cfg.max_iters:
+                 stop = True
+                 break
+@@ -564,6 +583,9 @@
+                     help="448 = 现有缓存；512/640 需要先 build_cache 重建")
+     ap.add_argument("--epochs", type=int, default=12)
+     ap.add_argument("--batch-size", type=int, default=32)
++    ap.add_argument("--accum-steps", type=int, default=1,
++                    help="梯度累积次数：等效批量 = batch-size × accum-steps；"
++                         "T1 协议要求等效 16（6 GB 卡：物理 2 × 8，或物理 8 × 2）")
+     ap.add_argument("--lr-backbone", type=float, default=1e-4)
+     ap.add_argument("--lr-head", type=float, default=1e-3)
+     ap.add_argument("--workers", type=int, default=8)
+diff --git a/src/cxr/config.py b/src/cxr/config.py
+--- a/src/cxr/config.py
++++ b/src/cxr/config.py
+@@ -90,6 +90,7 @@
+     cache_size: int = 448
+     epochs: int = 12
+     batch_size: int = 32
++    accum_steps: int = 1        # 梯度累积次数：等效批量 = batch_size × accum_steps（T1 协议要求等效 16）
+     lr_head: float = 1e-3
+     lr_backbone: float = 1e-4
+     weight_decay: float = 0.05
+diff --git a/tools/t1_backbone_smoke.py b/tools/t1_backbone_smoke.py
+new file mode 100644
+--- /dev/null
++++ b/tools/t1_backbone_smoke.py
+@@ -0,0 +1,137 @@
++"""T1 异构骨干上卡前的接口 / 显存 / 吞吐自检（本机 4060 Laptop 8 GB）。
++
++检查四件事：
++1. 预训练能加载（走 HF_ENDPOINT 镜像或 CXR_WEIGHTS_DIR 本地文件）；
++2. 灰度化正确：同一个灰度图复制成三通道 vs 直接一通道，输出应一致
++   （首层 RGB 卷积按通道求和，所以两者在数学上等价）；
++3. 空间特征图尺寸 + LSE 头能吃下（lse_alpha>0 走 `backbone.features`）；
++4. 指定分辨率 / 物理批量的峰值显存与训练吞吐（含 AdamW 更新）。
++
++    python tools/t1_backbone_smoke.py --arch efficientvit_b1.r288_in1k --img 384 --bs 2
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import sys
++import time
++
++import torch
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++sys.path.insert(0, os.path.join(ROOT, "src"))
++
++from cxr.models import _adapt_first_conv, build_model  # noqa: E402
++
++
++def stem_equivalence(arch: str, img: int) -> float:
++    """首层 RGB 卷积按通道求和 -> 灰度，数学上应严格等价。
++
++    直接比较「未改动的 3 通道 stem 吃 gray.repeat(3)」与「改成一通道的 stem 吃 gray」，
++    避开分类头随机初始化带来的差异。
++    """
++    import timm
++    import torch.nn as nn
++    net = timm.create_model(arch, pretrained=True, num_classes=0).eval()
++    conv3 = next(m for m in net.modules() if isinstance(m, nn.Conv2d) and m.in_channels == 3)
++    conv1 = _adapt_first_conv(conv3, 1).eval()
++    torch.manual_seed(0)
++    g = torch.rand(1, 1, img, img)
++    with torch.no_grad():
++        return (conv3(g.repeat(1, 3, 1, 1)) - conv1(g)).abs().max().item()
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--arch", default="efficientvit_b1.r288_in1k")
++    ap.add_argument("--img", type=int, default=384)
++    ap.add_argument("--bs", type=int, default=2)
++    ap.add_argument("--steps", type=int, default=10)
++    ap.add_argument("--warmup", type=int, default=3)
++    ap.add_argument("--amp", default="fp16", choices=["fp16", "bf16", "fp32"])
++    ap.add_argument("--out", default="")
++    a = ap.parse_args()
++
++    dev = torch.device("cuda")
++    print(f"[smoke] {a.arch} img={a.img} bs={a.bs} amp={a.amp} "
++          f"gpu={torch.cuda.get_device_name(0)}", flush=True)
++
++    model = build_model(a.arch, pretrained=True, drop_path=0.0, dropout=0.2,
++                        lse_alpha=0.25, lse_tau=1.0, head_type="lse", in_ch=1,
++                        img_size=0).to(dev)
++    n_param = sum(p.numel() for p in model.parameters())
++    bb_param = sum(p.numel() for p in model.backbone.parameters())
++    print(f"[smoke] params total {n_param/1e6:.3f}M  backbone {bb_param/1e6:.3f}M  "
++          f"fp32 size {n_param*4/2**20:.2f} MB", flush=True)
++
++    # ---- 1. 灰度等价性（首层卷积层面） ----
++    torch.manual_seed(0)
++    g = torch.rand(1, 1, a.img, a.img, device=dev)
++    model.eval()
++    with torch.no_grad():
++        o1 = model(g)
++    d = stem_equivalence(a.arch, a.img)
++    print(f"[smoke] stem grayscale-equiv max|Δ| = {d:.3e}  (应≈0)", flush=True)
++    print(f"[smoke] logits {tuple(o1.shape)} range [{o1.min():.3f}, {o1.max():.3f}]", flush=True)
++
++    # ---- 2. 空间特征形状 ----
++    with torch.no_grad():
++        f = model._spatial_features(g)
++    print(f"[smoke] spatial features {tuple(f.shape)}", flush=True)
++
++    # ---- 3. 训练步：显存 + 吞吐 ----
++    model.train()
++    opt = torch.optim.AdamW([
++        {"params": model.backbone.parameters(), "lr": 1e-4},
++        {"params": model.head.parameters(), "lr": 1e-3},
++    ], weight_decay=0.1)
++    lossf = torch.nn.BCEWithLogitsLoss()
++    dtype = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": None}[a.amp]
++    scaler = torch.amp.GradScaler("cuda", enabled=dtype == torch.float16)
++
++    x = torch.rand(a.bs, 1, a.img, a.img, device=dev)
++    y = (torch.rand(a.bs, 10, device=dev) > 0.5).float()
++    torch.cuda.reset_peak_memory_stats()
++    t_all = time.time()
++    for i in range(a.warmup + a.steps):
++        if i == a.warmup:
++            torch.cuda.synchronize()
++            t0 = time.time()
++            torch.cuda.reset_peak_memory_stats()
++        opt.zero_grad(set_to_none=True)
++        with torch.autocast("cuda", dtype=dtype, enabled=dtype is not None):
++            loss = lossf(model(x), y)
++        scaler.scale(loss).backward()
++        scaler.step(opt)
++        scaler.update()
++    torch.cuda.synchronize()
++    dt = time.time() - t0
++    ips = a.bs * a.steps / dt
++    peak_a = torch.cuda.max_memory_allocated() / 2**20
++    peak_r = torch.cuda.max_memory_reserved() / 2**20
++    total_wall = time.time() - t_all
++    print(f"[smoke] {a.steps} steps in {dt:.2f}s -> {dt/a.steps*1000:.1f} ms/step, "
++          f"{ips:.1f} img/s", flush=True)
++    print(f"[smoke] peak allocated {peak_a:.0f} MiB | reserved {peak_r:.0f} MiB | "
++          f"device total {torch.cuda.get_device_properties(0).total_memory/2**20:.0f} MiB",
++          flush=True)
++    # 12 轮 24,194 图的纯训练小时数（不含验证/存盘）
++    hours = 24194 * 12 / ips / 3600
++    print(f"[smoke] 12 epochs x 24,194 imgs ≈ {hours:.2f} h (纯训练，按实测吞吐)", flush=True)
++
++    if a.out:
++        rec = dict(arch=a.arch, img=a.img, bs=a.bs, amp=a.amp,
++                   params=n_param, backbone_params=bb_param,
++                   grayscale_maxdiff=d, spatial=list(f.shape),
++                   ms_per_step=dt / a.steps * 1000, img_per_s=ips,
++                   peak_allocated_mib=peak_a, peak_reserved_mib=peak_r,
++                   est_12ep_hours=hours, gpu=torch.cuda.get_device_name(0),
++                   torch=torch.__version__)
++        with open(a.out, "w", encoding="utf-8") as fh:
++            json.dump(rec, fh, indent=2, ensure_ascii=False)
++        print(f"[smoke] wrote {a.out}", flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/t1_export_fold_probs.py b/tools/t1_export_fold_probs.py
+new file mode 100644
+--- /dev/null
++++ b/tools/t1_export_fold_probs.py
+@@ -0,0 +1,192 @@
++"""T1 交付物：把 last.pt 导出成 fold2 留出集的逐图概率 + 检查级指标自检。
++
++口径与 `src/cxr/infer.py` 的部署路径一致：
++- 预处理：JPEG → draft 0.98×cache_size → BILINEAR 到 img_size → 逐图标准化；
++  与训练时读 512 缓存再缩到 384 的输入逐像素同源（同一个 load_square）。
++- TTA：水平翻转，两次前向的概率取平均（不是 logits 平均）。
++- 检查级：侧位 0.6 权重加权均值；患者收缩 0.85 单独报告，不改 CSV 本身。
++
++    python tools/t1_export_fold_probs.py --ckpt runs_t1/evb1_384_f2/last.pt \
++        --fold 2 --img 384 --cache-size 512 --out runs_t1/evb1_384_f2/fold2_probs.csv
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import sys
++
++import numpy as np
++import pandas as pd
++import torch
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++sys.path.insert(0, os.path.join(ROOT, "src"))
++
++from cxr.infer import PathDataset, predict_probs  # noqa: E402
++from cxr.models import build_model  # noqa: E402
++
++PCOLS = [f"p{k}" for k in range(1, 11)]
++
++
++def parse_label(s) -> np.ndarray:
++    """与 tools/study_metric.py 逐行一致：只有整串恰为 "10" 时类 10 才算阳性。"""
++    v = np.zeros(10, np.float32)
++    s = str(s).strip()
++    if s == "" or s.lower() == "nan":
++        return v
++    cs = [c.strip() for c in s.split(";") if c.strip()]
++    if cs == ["10"]:
++        v[9] = 1.0
++        return v
++    for c in cs:
++        i = int(c) - 1
++        if i < 9:
++            v[i] = 1.0
++    return v
++
++
++def rank_auc(y: np.ndarray, p: np.ndarray) -> float:
++    """与 tools/study_metric.py 同款秩统计 AUC（并列取平均秩）。"""
++    y = np.asarray(y, float)
++    p = np.asarray(p, float)
++    order = np.argsort(p, kind="mergesort")
++    ps = p[order]
++    r = np.empty(len(p), float)
++    # 平均秩处理并列，避免分数离散时 AUC 被高估
++    i = 0
++    while i < len(ps):
++        j = i
++        while j + 1 < len(ps) and ps[j + 1] == ps[i]:
++            j += 1
++        r[order[i:j + 1]] = (i + j) / 2.0 + 1.0
++        i = j + 1
++    pos = y > 0
++    n1, n0 = pos.sum(), (~pos).sum()
++    if n1 == 0 or n0 == 0:
++        return float("nan")
++    return float((r[pos].sum() - n1 * (n1 + 1) / 2) / (n1 * n0))
++
++
++def macro_auc(Y: np.ndarray, P: np.ndarray):
++    per = [rank_auc(Y[:, c], P[:, c]) for c in range(Y.shape[1])]
++    return float(np.nanmean(per)), per
++
++
++def study_level(df: pd.DataFrame, probs: np.ndarray, lat_weight: float = 0.6,
++                shrink: float = 0.85):
++    """逐图 -> 检查级（侧位加权）-> 患者收缩，完全复刻 infer.write_submission。"""
++    d = pd.DataFrame(probs, columns=PCOLS)
++    d["Subject_id"] = df["Subject_id"].values
++    d["Study_id"] = df["Study_id"].values
++    w = np.where(df["ViewPosition"].fillna("NA").astype(str).isin(["LATERAL", "LL"]).values,
++                 lat_weight, 1.0)
++    for c in PCOLS:
++        d[c] = d[c] * w
++    g = d.groupby(["Subject_id", "Study_id"], as_index=False)[PCOLS].sum()
++    wsum = pd.Series(w).groupby([df["Subject_id"].values, df["Study_id"].values]).sum()
++    g[PCOLS] = g[PCOLS].div(wsum.values[:, None])
++    # 检查级标签：同一检查的所有图标签一致（已在 docs 中验证），取首行
++    lab = (df.assign(k=df.Study_id.astype(str))
++             .drop_duplicates("k")[["Study_id", "Predict_class"]])
++    g = g.merge(lab, on="Study_id", how="left")
++    Y = np.stack([parse_label(v) for v in g["Predict_class"].astype(str)])
++    P = g[PCOLS].values.astype(np.float32)
++    P_shrunk = P.copy()
++    pm = g.groupby("Subject_id")[PCOLS].transform("mean").values
++    P_shrunk = shrink * P + (1.0 - shrink) * pm
++    return g, Y, P, P_shrunk
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--ckpt", required=True)
++    ap.add_argument("--split", default="fold", choices=["fold", "valid"],
++                    help="fold=训练折表里的留出折；valid=官方 valid 1422 图")
++    ap.add_argument("--fold", type=int, default=2)
++    ap.add_argument("--img", type=int, default=0, help="0=读 ckpt 里的 img_size")
++    ap.add_argument("--cache-size", type=int, default=512)
++    ap.add_argument("--batch-size", type=int, default=16)
++    ap.add_argument("--amp", default="bf16", choices=["bf16", "fp16", "fp32"])
++    ap.add_argument("--out", required=True)
++    a = ap.parse_args()
++
++    ck = torch.load(a.ckpt, map_location="cpu", weights_only=False)
++    cfg = ck.get("cfg", {})
++    arch = cfg.get("arch") or ck.get("arch")
++    img = a.img or int(cfg.get("img_size") or ck.get("img_size") or 384)
++    in_ch = 2 if cfg.get("extra_channel", "") == "asym" else 1
++    print(f"[export] ckpt={a.ckpt}\n[export] arch={arch} img={img} cache={a.cache_size} "
++          f"epoch={ck.get('epoch')} lse_alpha={cfg.get('lse_alpha')} head={cfg.get('head_type')}",
++          flush=True)
++
++    model = build_model(arch, pretrained=False, drop_path=0.0,
++                        n_aux=0, n_view=0, final_norm=bool(cfg.get("final_norm", False)),
++                        lse_alpha=float(cfg.get("lse_alpha", 0.0)),
++                        lse_tau=float(cfg.get("lse_tau", 1.0)),
++                        head_type=cfg.get("head_type", "lse"), in_ch=in_ch, img_size=0)
++    sd = ck["model"] if "model" in ck else ck
++    missing, unexpected = model.load_state_dict(sd, strict=False)
++    if unexpected or [k for k in missing if not k.endswith("num_batches_tracked")]:
++        raise SystemExit(f"[export] state dict 不匹配 missing={missing[:5]} unexpected={unexpected[:5]}")
++    model.eval().cuda()
++    print(f"[export] loaded {sum(p.numel() for p in model.parameters())/1e6:.3f}M params", flush=True)
++
++    data_dir = os.environ.get("CXR_DATA", "")
++    tr = pd.read_csv(os.path.join(data_dir, "train.csv"))
++    if a.split == "valid":
++        vd = pd.read_csv(os.path.join(data_dir, "valid.csv"))
++        df = vd.reset_index(drop=True)
++        split_name = "valid"
++        print(f"[export] valid: {len(df)} images / {df.Study_id.nunique()} studies / "
++              f"{df.Subject_id.nunique()} patients", flush=True)
++    else:
++        fk = pd.read_csv(os.path.join(ROOT, "data", "patient_folds_5f.csv"))
++        fmap = dict(zip(fk.Study_id.astype(str), fk.fold.astype(int)))
++        fo = tr.Study_id.astype(str).map(fmap)
++        df = tr[(fo == a.fold).values].reset_index(drop=True)
++        split_name = f"fold{a.fold}"
++        print(f"[export] fold {a.fold}: {len(df)} images / {df.Study_id.nunique()} studies / "
++              f"{df.Subject_id.nunique()} patients", flush=True)
++
++    ds = PathDataset(df, split_name if a.split == "valid" else "train",
++                     img_size=img, cache_size=a.cache_size, norm="per_image")
++    probs = predict_probs(model, ds, device="cuda", batch_size=a.batch_size, tta=True, amp=a.amp)
++    print(f"[export] probs {probs.shape} finite={np.isfinite(probs).all()} "
++          f"range=[{probs.min():.4f},{probs.max():.4f}]", flush=True)
++
++    out = pd.DataFrame({"Dicom_id": df.Dicom_id.values, "Subject_id": df.Subject_id.values,
++                        "Study_id": df.Study_id.values})
++    for k, c in enumerate(PCOLS):
++        out[c] = probs[:, k]
++    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
++    out.to_csv(a.out, index=False, float_format="%.6f")
++    print(f"[export] wrote {a.out}  rows={len(out)}", flush=True)
++
++    # ---- 指标自检 ----
++    Y_img = np.stack([parse_label(v) for v in df["Predict_class"].astype(str)])
++    m_img, per_img = macro_auc(Y_img, probs)
++    g, Y, P, P_sh = study_level(df, probs)
++    m_st, per_st = macro_auc(Y, P)
++    m_sh, per_sh = macro_auc(Y, P_sh)
++    print(f"[metric] image-level macro   {m_img:.4f}")
++    print(f"[metric] study-level macro   {m_st:.4f}   (侧位加权 0.6，检查级)")
++    print(f"[metric] study + shrink 0.85 {m_sh:.4f}")
++    print(f"[metric] studies {len(g)}  c1+ {int(Y[:,0].sum())}  c4+ {int(Y[:,3].sum())}")
++    print("[metric] per-class study-level: " +
++          " ".join(f"c{i+1}:{v:.3f}" for i, v in enumerate(per_st)))
++
++    rec = dict(ckpt=os.path.abspath(a.ckpt), arch=arch, img_size=img,
++               cache_size=a.cache_size, split=split_name, n_images=int(len(df)),
++               n_studies=int(len(g)), grayscale_note="stem 灰度化，单通道",
++               tta="hflip, 概率平均", macro_image=m_img, macro_study=m_st,
++               macro_study_shrink085=m_sh, per_class_study=per_st,
++               c1_pos=int(Y[:, 0].sum()), c4_pos=int(Y[:, 3].sum()))
++    js = a.out.replace(".csv", "_metrics.json")
++    with open(js, "w", encoding="utf-8") as f:
++        json.dump(rec, f, indent=2, ensure_ascii=False)
++    print(f"[metric] wrote {js}", flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/t1_verify_csv.py b/tools/t1_verify_csv.py
+new file mode 100644
+--- /dev/null
++++ b/tools/t1_verify_csv.py
+@@ -0,0 +1,89 @@
++"""T2 §2.1 验收：逐图概率 CSV 是否严格合规。
++
++只检查**格式与键集**，不碰模型、不做任何聚合 —— 聚合由队长统一算。
++通过条件：
++- 行数等于目标集（valid 1422 / fold2 6150）
++- Dicom_id 与官方 csv 的对应集合**不重不漏**（逐键比较，不是取交集）
++- 列名恰为 Dicom_id,Subject_id,Study_id,p1..p10
++- p1..p10 全部有限且严格落在 (0,1)
++
++    python tools/t1_verify_csv.py --probs runs_t1/hrnet18_384_f2_accum2/fold2_probs.csv --split fold2
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import os
++import sys
++
++import numpy as np
++import pandas as pd
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++PCOLS = [f"p{k}" for k in range(1, 11)]
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--probs", required=True)
++    ap.add_argument("--split", default="fold2", choices=["fold2", "valid"])
++    ap.add_argument("--fold-csv", default=os.path.join(ROOT, "data", "patient_folds_5f.csv"))
++    a = ap.parse_args()
++
++    data_dir = os.environ.get("CXR_DATA", "")
++    if a.split == "valid":
++        exp = pd.read_csv(os.path.join(data_dir, "valid.csv"))
++    else:
++        tr = pd.read_csv(os.path.join(data_dir, "train.csv"))
++        fk = pd.read_csv(a.fold_csv)
++        fmap = dict(zip(fk.Study_id.astype(str), fk.fold.astype(int)))
++        exp = tr[tr.Study_id.astype(str).map(fmap) == 2]
++    exp_ids = exp["Dicom_id"].astype(str).tolist()
++
++    df = pd.read_csv(a.probs)
++    errs = []
++    if list(df.columns) != ["Dicom_id", "Subject_id", "Study_id"] + PCOLS:
++        errs.append(f"列名不符: {list(df.columns)}")
++    if len(df) != len(exp_ids):
++        errs.append(f"行数 {len(df)} != 期望 {len(exp_ids)}")
++    ids = df["Dicom_id"].astype(str).tolist()
++    if len(set(ids)) != len(ids):
++        errs.append(f"Dicom_id 有重复 {len(ids) - len(set(ids))} 个")
++    miss = set(exp_ids) - set(ids)
++    extra = set(ids) - set(exp_ids)
++    if miss or extra:
++        errs.append(f"键集不符: 缺失 {len(miss)} 个 / 多余 {len(extra)} 个 "
++                    f"(例: {list(miss)[:3]} / {list(extra)[:3]})")
++    # docs/56 §3 要求核对的「图像 ID 与患者、检查的完整对应」：
++    # 逐行比较 (Subject_id, Study_id) 是否与官方元数据一致，而不只是 Dicom_id 集合相等。
++    if not (miss or extra) and len(df) == len(exp_ids):
++        ref = exp.assign(_k=exp.Dicom_id.astype(str)).set_index("_k")[["Subject_id", "Study_id"]]
++        got = df.assign(_k=df.Dicom_id.astype(str)).set_index("_k")[["Subject_id", "Study_id"]]
++        j = ref.join(got, how="left", lsuffix="_ref", rsuffix="_csv")
++        bad = ((j.Subject_id_ref.astype(str) != j.Subject_id_csv.astype(str)) |
++               (j.Study_id_ref.astype(str) != j.Study_id_csv.astype(str)))
++        if bad.any():
++            ex = j[bad].head(3)
++            errs.append(f"{int(bad.sum())} 行的患者/检查与官方元数据不一致，例: "
++                        f"{ex.to_dict(orient='index')}")
++    if any(c in df.columns for c in PCOLS):
++        P = df[PCOLS].to_numpy(np.float64)
++        if not np.isfinite(P).all():
++            errs.append("存在非有限值")
++        if P.min() <= 0 or P.max() >= 1:
++            errs.append(f"概率越界: min={P.min():.3e} max={P.max():.3e}")
++    sha = hashlib.sha256(open(a.probs, "rb").read()).hexdigest()
++    size = os.path.getsize(a.probs)
++
++    print(f"[verify] {a.probs}")
++    print(f"[verify] rows={len(df)}  expected={len(exp_ids)}  "
++          f"studies={df.Study_id.nunique()}  sha256={sha}  bytes={size}")
++    if errs:
++        for e in errs:
++            print(f"[FAIL] {e}")
++        raise SystemExit(1)
++    print("[verify] 通过：键集不重不漏，p1..p10 ∈ (0,1) 且有限")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/t1_accum_check.py b/tools/t1_accum_check.py
+new file mode 100644
+--- /dev/null
++++ b/tools/t1_accum_check.py
+@@ -0,0 +1,80 @@
++"""T1 梯度累积的正确性自检：组算术 + 归一化梯度等价性。
++
++两件事：
++1. 组算术：任意 n_micro / accum，分组必须**每个微批恰好属于一组**、每组都会触发一次
++   优化器步、每轮总优化器步数 = ceil(n_micro/accum)，且最后一组即使不足也能收尾。
++2. 归一化：把一批 12 个样本拆成 3 个微批累积，梯度应等于整批 12 个样本平均损失的梯度
++   （前提：微批等大、loss 用 mean）。这是协议里"损失按实际累计样本数归一化"的数学依据。
++
++    python tools/t1_accum_check.py
++"""
++from __future__ import annotations
++
++import math
++
++import torch
++import torch.nn as nn
++
++
++def group_plan(n_micro: int, accum: int):
++    """复刻 cxr/train.py 训练循环里的分组算术。"""
++    plan = []
++    for idx in range(n_micro):
++        g_start = (idx // accum) * accum
++        g_micro = min(accum, n_micro - g_start)
++        plan.append((g_micro, ((idx % accum) + 1) >= g_micro))
++    return plan
++
++
++def check_groups():
++    bad = 0
++    for accum in (1, 2, 3, 4, 8):
++        for n_micro in (1, 2, 3, 5, 7, 11, 1511, 1512, 1513):
++            plan = group_plan(n_micro, accum)
++            steps = sum(1 for _, step in plan if step)
++            expect = math.ceil(n_micro / accum)
++            # 每个微批都必须被"覆盖"到一次 step（最后一组的收尾算在内）
++            ok_steps = steps == expect
++            # 组内实际微批数之和必须等于总微批数（只在每组收尾时累加一次）
++            ok_sum = sum(g for g, step in plan if step) == n_micro
++            # 最后一个微批必须是优化器步（否则梯度会跨 epoch 泄漏）
++            ok_tail = plan[-1][1]
++            if not (ok_steps and ok_sum and ok_tail):
++                bad += 1
++                print(f"  FAIL accum={accum} n_micro={n_micro}: steps={steps} expect={expect} "
++                      f"sum={ok_sum} tail={ok_tail}")
++    print(f"[check] 组算术: {'全部通过' if bad == 0 else f'{bad} 个失败'}")
++    return bad == 0
++
++
++def check_gradient_equivalence():
++    torch.manual_seed(0)
++    net = nn.Sequential(nn.Linear(8, 16), nn.ReLU(), nn.Linear(16, 10))
++    x = torch.randn(12, 8)
++    y = (torch.rand(12, 10) > 0.5).float()
++    lossf = nn.BCEWithLogitsLoss()
++
++    # --- 整批一次算 ---
++    net.zero_grad(set_to_none=True)
++    lossf(net(x), y).backward()
++    g_full = [p.grad.detach().clone() for p in net.parameters()]
++
++    # --- 拆成 3 个微批，按 1/3 归一化累积 ---
++    net.zero_grad(set_to_none=True)
++    g_micro = 3
++    for i in range(3):
++        s = slice(i * 4, (i + 1) * 4)
++        (lossf(net(x[s]), y[s]) * (1.0 / g_micro)).backward()
++    g_acc = [p.grad.detach().clone() for p in net.parameters()]
++
++    dmax = max((a - b).abs().max().item() for a, b in zip(g_full, g_acc))
++    rel = max(((a - b).abs().max() / (b.abs().max() + 1e-12)).item()
++              for a, b in zip(g_full, g_acc))
++    print(f"[check] 梯度等价: max|Δ| = {dmax:.3e}  max rel = {rel:.3e}  "
++          f"({'通过' if dmax < 1e-6 else '失败'})")
++    return dmax < 1e-6
++
++
++if __name__ == "__main__":
++    ok = check_groups() and check_gradient_equivalence()
++    raise SystemExit(0 if ok else 1)
+diff --git a/tools/t1_paired_compare.py b/tools/t1_paired_compare.py
+new file mode 100644
+--- /dev/null
++++ b/tools/t1_paired_compare.py
+@@ -0,0 +1,152 @@
++"""同一留出集上两个候选的配对比较（检查级宏 AUC）。
++
++为什么配对：两个模型评的是**同一批检查**，抽样噪声大部分抵消，差值标准误比两个绝对
++AUC 各自的区间小一个量级。逐条比较绝对 AUC 会把"没差别"读成"差不多"或"更差"。
++
++    python tools/t1_paired_compare.py --a A_probs.csv --b B_probs.csv --split fold2 --reps 2000
++
++输出：宏 AUC 的 A/B/Δ + 配对 bootstrap 95% 区间 + 逐类 Δ。
++CSV 必须是 T2 §2.1 的逐图概率（本脚本自己做检查级聚合）。
++"""
++from __future__ import annotations
++
++import argparse
++import os
++
++import numpy as np
++import pandas as pd
++
++PCOLS = [f"p{k}" for k in range(1, 11)]
++
++
++def parse_label(s) -> np.ndarray:
++    v = np.zeros(10, np.float32)
++    s = str(s).strip()
++    if s == "" or s.lower() == "nan":
++        return v
++    cs = [c.strip() for c in s.split(";") if c.strip()]
++    if cs == ["10"]:
++        v[9] = 1.0
++        return v
++    for c in cs:
++        i = int(c) - 1
++        if i < 9:
++            v[i] = 1.0
++    return v
++
++
++def rank_auc(y, p) -> float:
++    order = np.argsort(p, kind="mergesort")
++    ps = p[order]
++    r = np.empty(len(p), float)
++    i = 0
++    while i < len(ps):
++        j = i
++        while j + 1 < len(ps) and ps[j + 1] == ps[i]:
++            j += 1
++        r[order[i:j + 1]] = (i + j) / 2.0 + 1.0
++        i = j + 1
++    pos = y > 0
++    n1, n0 = pos.sum(), (~pos).sum()
++    if n1 == 0 or n0 == 0:
++        return np.nan
++    return float((r[pos].sum() - n1 * (n1 + 1) / 2) / (n1 * n0))
++
++
++def to_study(df: pd.DataFrame, probs: np.ndarray, lat_weight: float, shrink: float):
++    d = pd.DataFrame(probs, columns=PCOLS)
++    d["Subject_id"] = df["Subject_id"].values
++    d["Study_id"] = df["Study_id"].values
++    w = np.where(df["ViewPosition"].fillna("NA").astype(str).isin(["LATERAL", "LL"]).values,
++                 lat_weight, 1.0)
++    for c in PCOLS:
++        d[c] = d[c] * w
++    g = d.groupby(["Subject_id", "Study_id"], as_index=False)[PCOLS].sum()
++    wsum = pd.Series(w).groupby([df["Subject_id"].values, df["Study_id"].values]).sum()
++    g[PCOLS] = g[PCOLS].div(wsum.values[:, None])
++    lab = (df.assign(k=df.Study_id.astype(str)).drop_duplicates("k")[["Study_id", "Predict_class"]])
++    g = g.merge(lab, on="Study_id", how="left")
++    P = g[PCOLS].values.astype(np.float64)
++    if shrink < 1.0:
++        pm = g.groupby("Subject_id")[PCOLS].transform("mean").values
++        P = shrink * P + (1.0 - shrink) * pm
++    Y = np.stack([parse_label(v) for v in g["Predict_class"].astype(str)])
++    return g, Y, P
++
++
++def macro(Y, P, idx=None):
++    if idx is not None:
++        Y, P = Y[idx], P[idx]
++    return float(np.nanmean([rank_auc(Y[:, c], P[:, c]) for c in range(10)]))
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--a", required=True)
++    ap.add_argument("--b", required=True)
++    ap.add_argument("--split", default="fold2", choices=["fold2", "valid"])
++    ap.add_argument("--lat-weight", type=float, default=0.6)
++    ap.add_argument("--shrink", type=float, default=0.85)
++    ap.add_argument("--unit", default="patient", choices=["patient", "study"],
++                    help="重采样单位；仓库 compare_folds.py 用 patient（同一患者的多次检查相关，"
++                         "按检查重采样会把区间说得过窄）")
++    ap.add_argument("--reps", type=int, default=2000)
++    ap.add_argument("--seed", type=int, default=20261126)
++    a = ap.parse_args()
++
++    data = os.environ.get("CXR_DATA", "")
++    if a.split == "valid":
++        src = pd.read_csv(os.path.join(data, "valid.csv"))
++    else:
++        tr = pd.read_csv(os.path.join(data, "train.csv"))
++        fk = pd.read_csv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
++                                      "data", "patient_folds_5f.csv"))
++        fm = dict(zip(fk.Study_id.astype(str), fk.fold.astype(int)))
++        src = tr[tr.Study_id.astype(str).map(fm) == 2].reset_index(drop=True)
++
++    da = pd.read_csv(a.a, dtype={"Dicom_id": str})
++    db = pd.read_csv(a.b, dtype={"Dicom_id": str})
++    src = src.assign(_k=src.Dicom_id.astype(str)).set_index("_k")
++    da = da.assign(_k=da.Dicom_id.astype(str)).set_index("_k").loc[src.index]
++    db = db.assign(_k=db.Dicom_id.astype(str)).set_index("_k").loc[src.index]
++    df = src.reset_index(drop=True)
++
++    g0, Y, PA = to_study(df, da[PCOLS].values.astype(np.float64), a.lat_weight, a.shrink)
++    _, Y2, PB = to_study(df, db[PCOLS].values.astype(np.float64), a.lat_weight, a.shrink)
++    assert (Y == Y2).all(), "两次的检查级标签不一致"
++    n = len(Y)
++
++    ma, mb = macro(Y, PA), macro(Y, PB)
++    print(f"studies {n}  A {ma:.4f}  B {mb:.4f}  delta {mb - ma:+.4f}")
++
++    rng = np.random.default_rng(a.seed)
++    if a.unit == "patient":
++        # 仓库口径（compare_folds.py）：按患者有放回重采样，同一患者的检查整组进出。
++        # 同一患者的多张检查高度相关，按检查重采样会把 CI 说得过窄。
++        subj = g0["Subject_id"].to_numpy()
++        uniq = np.unique(subj)
++        rows_of = {u: np.where(subj == u)[0] for u in uniq}
++    else:
++        uniq = np.arange(n)
++        rows_of = {u: np.array([u]) for u in uniq}
++
++    boot = []
++    for _ in range(a.reps):
++        pick = rng.choice(uniq, len(uniq), replace=True)
++        take = np.concatenate([rows_of[u] for u in pick])
++        boot.append(macro(Y, PB, take) - macro(Y, PA, take))
++    boot = np.array(boot)
++    lo, hi = np.nanpercentile(boot, 2.5), np.nanpercentile(boot, 97.5)
++    star = "  <-- 区间不含 0" if (lo > 0 or hi < 0) else ""
++    print(f"{a.unit} 级配对 bootstrap 95%CI [{lo:+.4f}, {hi:+.4f}]  "
++          f"({a.reps} 次, {len(uniq)} 个{a.unit}){star}")
++
++    print("逐类 Δ (B - A)：")
++    for c in range(10):
++        ca = rank_auc(Y[:, c], PA[:, c])
++        cb = rank_auc(Y[:, c], PB[:, c])
++        print(f"  c{c+1}: {ca:.3f} -> {cb:.3f}  {cb - ca:+.3f}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/compare_fold_tables.py b/tools/compare_fold_tables.py
+new file mode 100644
+--- /dev/null
++++ b/tools/compare_fold_tables.py
+@@ -0,0 +1,80 @@
++"""对比两份患者折表，回答两个问题（用于跨机折表一致性核对）。
++
++背景：折号不同 ⇒ 训练集可能包含对方 fold 2 的检查，对方 fold 2 上的评分就是泄漏后的虚高。
++每折规模相同**不能**证明划分相同（不同划分可以有相同的折大小），必须逐 Study 比对键集。
++
++    python tools/compare_fold_tables.py --a data/patient_folds_5f.csv --b 别人给的折表.csv
++
++输出（正是需要的两行）：
++    折号不一致的 Study：N
++    若以 A 的 fold 2 为评估集：B 的训练集里有 M 个 A-fold2 检查
++另附反向一行，便于双向确认。
++
++注意：A/B 两份文件的**行尾符差异不影响结论**（pandas 读入时已归一），但字节 SHA 会不同，
++所以"SHA 不一致"必须用本脚本排除划分差异后才能下结论。
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import os
++
++import pandas as pd
++
++COLS = ("Study_id", "Subject_id", "fold")
++
++
++def load(path: str) -> pd.DataFrame:
++    df = pd.read_csv(path, dtype={"Study_id": str, "Subject_id": str})
++    miss = [c for c in COLS if c not in df.columns]
++    if miss:
++        raise SystemExit(f"[error] {path} 缺少列 {miss}（需要 Study_id, Subject_id, fold）")
++    return df[list(COLS)].copy()
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--a", default=os.path.join(os.path.dirname(os.path.dirname(
++        os.path.abspath(__file__))), "data", "patient_folds_5f.csv"), help="基准折表 A")
++    ap.add_argument("--b", required=True, help="待核对的折表 B（你们的）")
++    ap.add_argument("--fold", type=int, default=2, help="评估折号，默认 2")
++    a = ap.parse_args()
++
++    A, B = load(a.a), load(a.b)
++    for name, df, p in (("A", A, a.a), ("B", B, a.b)):
++        dup = len(df) - df.Study_id.nunique()
++        print(f"[load] {name} {p}: {len(df)} studies, 重复 {dup}, "
++              f"patients {df.Subject_id.nunique()}, sha256 {hashlib.sha256(open(p, 'rb').read()).hexdigest()}")
++
++    # ---- 折号不一致 ----
++    m = A.merge(B, on="Study_id", how="outer", suffixes=("_a", "_b"), indicator=True)
++    only_a = m[m._merge == "left_only"]
++    only_b = m[m._merge == "right_only"]
++    both = m[m._merge == "both"]
++    fold_diff = both[both.fold_a != both.fold_b]
++    pat_diff = both[both.Subject_id_a.astype(str) != both.Subject_id_b.astype(str)]
++    print(f"\n折号不一致的 Study：{len(fold_diff)}")
++    if len(only_a) or len(only_b):
++        print(f"  另：只在 A 有的 Study {len(only_a)} 个，只在 B 有的 {len(only_b)} 个")
++    if len(pat_diff):
++        print(f"  另：同一 Study 的患者归属不一致 {len(pat_diff)} 个（更严重，需先查）")
++    if len(fold_diff):
++        print("  例：" + ", ".join(f"{r.Study_id}(A{r.fold_a}→B{r.fold_b})"
++                                   for r in fold_diff.head(5).itertuples()))
++
++    # ---- 双向泄漏 ----
++    a_eval = set(A[A.fold == a.fold].Study_id)
++    b_eval = set(B[B.fold == a.fold].Study_id)
++    b_train = set(B[B.fold != a.fold].Study_id)
++    a_train = set(A[A.fold != a.fold].Study_id)
++    print(f"若以 A 的 fold {a.fold} 为评估集：B 的训练集里有 {len(a_eval & b_train)} 个 A-fold{a.fold} 检查")
++    print(f"若以 B 的 fold {a.fold} 为评估集：A 的训练集里有 {len(b_eval & a_train)} 个 B-fold{a.fold} 检查")
++
++    ok = (len(fold_diff) == 0 and not len(only_a) and not len(only_b)
++          and not len(pat_diff) and not (a_eval & b_train))
++    print("\n[结论]", "两份折表划分一致，无泄漏风险" if ok else "两份折表划分不同，评分不可直接比较")
++    raise SystemExit(0 if ok else 1)
++
++
++if __name__ == "__main__":
++    main()

@@ -354,10 +354,19 @@ def train(cfg: TrainConfig):
     pos_weight = torch.tensor(pw, dtype=torch.float32, device=device)
 
     opt = make_optimizer(model, cfg)
-    steps_per_epoch = len(dl_tr)
-    total_steps = cfg.max_iters if cfg.max_iters > 0 else cfg.epochs * steps_per_epoch
-    sched = CosineSchedule(opt, int(cfg.warmup_epochs * steps_per_epoch), total_steps,
+    n_micro = len(dl_tr)
+    accum = max(1, int(getattr(cfg, "accum_steps", 1) or 1))
+    steps_per_epoch = n_micro                      # 物理前向次数（日志用）
+    opt_steps_per_epoch = math.ceil(n_micro / accum)
+    total_steps = cfg.max_iters if cfg.max_iters > 0 else cfg.epochs * opt_steps_per_epoch
+    # 梯度累积下 warmup 与 cosine 都按**优化器步**推进（T1 协议要求）
+    sched = CosineSchedule(opt, int(cfg.warmup_epochs * opt_steps_per_epoch), total_steps,
                            [cfg.lr_backbone, cfg.lr_head])
+    if accum > 1:
+        print(f"[train] grad accumulation: 物理 batch {cfg.batch_size} × {accum} = "
+              f"等效 {cfg.batch_size * accum}；每轮 {n_micro} 个微批 -> "
+              f"{opt_steps_per_epoch} 个优化器步；BatchNorm 统计与 Mixup 配对按物理批量 "
+              f"{cfg.batch_size} 决定；每轮末尾不足一组的按实际微批数归一化", flush=True)
     ema = ModelEMA(model, cfg.ema_decay) if cfg.ema_decay > 0 else None
     amp_dtype = torch.bfloat16 if cfg.amp == "bf16" else (torch.float16 if cfg.amp == "fp16" else None)
     # torch.amp.GradScaler 是 2.3+ 的写法；torch 2.1/2.2（AutoDL 的 V100 镜像）只有
@@ -487,22 +496,32 @@ def train(cfg: TrainConfig):
                     logits2 = model(x2, view=view_in)
                     loss = loss + float(cfg.view_consistency) * torch.nn.functional.mse_loss(
                         torch.sigmoid(logits.float()), torch.sigmoid(logits2.float()))
-            opt.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            if cfg.grad_clip > 0:
-                scaler.unscale_(opt)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-            scaler.step(opt)
-            scaler.update()
-            sched.step()
-            if ema:
-                ema.update(model)
+            # ---- 梯度累积：组内每个微批的损失先除以「本组实际微批数」再反传 ----
+            # 这样一组梯度的和 = 组内样本平均损失的梯度（而不是微批损失的简单相加）。
+            # drop_last=True 保证每个微批都是满的，所以组内样本数 = 微批数 × 物理批量；
+            # 每轮末尾若不足 accum 个微批，g_micro 会按实际数量归一化，不会被稀释。
+            idx = it - 1
+            g_start = (idx // accum) * accum
+            g_micro = min(accum, n_micro - g_start)
+            is_opt_step = ((idx % accum) + 1) >= g_micro
+            scaler.scale(loss * (1.0 / g_micro)).backward()
             run_loss += loss.item()
             n_batches += 1
-            global_step += 1
+            if is_opt_step:
+                if cfg.grad_clip > 0:
+                    scaler.unscale_(opt)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+                scaler.step(opt)
+                scaler.update()
+                opt.zero_grad(set_to_none=True)
+                sched.step()               # 按优化器步推进，不是按微批
+                if ema:
+                    ema.update(model)
+                global_step += 1
             if it % 100 == 0:
-                print(f"  e{epoch} {it}/{steps_per_epoch} loss={run_loss/n_batches:.4f} "
-                      f"lr={opt.param_groups[0]['lr']:.2e} {time.time()-t0:.0f}s", flush=True)
+                print(f"  e{epoch} {it}/{steps_per_epoch} opt_step={global_step} "
+                      f"loss={run_loss/n_batches:.4f} lr={opt.param_groups[0]['lr']:.2e} "
+                      f"{time.time()-t0:.0f}s", flush=True)
             if cfg.max_iters > 0 and global_step >= cfg.max_iters:
                 stop = True
                 break
@@ -564,6 +583,9 @@ def parse_args():
                     help="448 = 现有缓存；512/640 需要先 build_cache 重建")
     ap.add_argument("--epochs", type=int, default=12)
     ap.add_argument("--batch-size", type=int, default=32)
+    ap.add_argument("--accum-steps", type=int, default=1,
+                    help="梯度累积次数：等效批量 = batch-size × accum-steps；"
+                         "T1 协议要求等效 16（6 GB 卡：物理 2 × 8，或物理 8 × 2）")
     ap.add_argument("--lr-backbone", type=float, default=1e-4)
     ap.add_argument("--lr-head", type=float, default=1e-3)
     ap.add_argument("--workers", type=int, default=8)
