@@ -1,7 +1,7 @@
 # T1 补丁（HRNet-W18 fold2）
-# 基线：main 的 9d46cc4（三个 pre-image 哈希如下）。
-# 说明：teammates/6gb-model-screening 现在在 cf3efaa，比本基线只多一行
-#       （src/cxr/train.py 增加 --hflip 参数），本补丁已在该提交上验证可干净应用。
+# 基线：b6b1b73（三个 pre-image 哈希如下，已逐文件核对）。
+# 注意：docs/56 写的 9d46cc4 不适用——该提交的 train.py 与 config.py 已改，本补丁会在两个文件上失败。
+#       teammates/6gb-model-screening 当前 HEAD cf3efaa 比 b6b1b73 多一行 --hflip，本补丁在该提交上也可干净应用。
 # 应用前先核对 pre-image：
 #   7c08206f18eed9c148737e3aa91586054771f95baf78c8d94028cacef6c47a07  src/cxr/models.py
 #   9e7e8f24a4739fe0d886ff1a2e2d10a20cac293277b87e9e3327d378bb058f59  src/cxr/train.py

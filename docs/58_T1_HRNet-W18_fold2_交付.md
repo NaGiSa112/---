@@ -269,7 +269,7 @@ python tools/e1_score_v2.py --probs runs_t1/hrnet18_384_f2_accum2/fold2_probs.cs
 | 训练日志 + 吞吐 + 峰值显存（T1-交付5） | 日志在 `runs_t1/`；吞吐与显存见 §7（附取数口径） | ✅ |
 | 归一化方式（T2-2.2） | `per_image` | ✅ |
 | 推理几何与训练几何一致（T2-2.2） | 同一 `load_square(512)` + 同参数 `interpolate` | ✅ |
-| 提交号（T1-交付6 / T2-2.2 / README-§四.1） | 四件替代件已备（逐文件哈希 / `9d46cc4` 补丁 / 完整命令 / last.pt+config.json） | ⚠️ 待队长裁定 |
+| 提交号（T1-交付6 / T2-2.2 / README-§四.1） | 四件替代件已备（逐文件哈希 / `b6b1b73` 补丁 / 完整命令 / last.pt+config.json） | ⚠️ 待队长裁定 |
 | 折表 SHA-256 与 README 一致（README-§四.4） | **已查清：CRLF vs LF，同一内容**；划分差异 0、泄漏 0 | ✅ |
 | 物理批量 2（T1 首折协议示例） | 物理 8（显存决定），等效 16 不变 | ⚠️ 已注明 |
 | drop_path 0.15（部署配方） | 实际 0（timm HRNet 无 StochasticDepth） | ⚠️ 架构限制 |

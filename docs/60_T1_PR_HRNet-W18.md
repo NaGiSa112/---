@@ -17,7 +17,7 @@
 | `src/cxr/train.py` | `253b64c8377037174a878977b030a38ca7183b3a2fd2ed49e96810f61b193a2f` | 梯度累积（`--accum-steps`） |
 | `src/cxr/config.py` | `8c7bce2c056ddf99b9773ae91c8c1b1216764266af553f559049ad3269de68e6` | `TrainConfig.accum_steps` |
 
-**补丁基准 commit：`9d46cc4`**（`docs/56` 引用的快照）。补丁为 `docs/58_T1_code.patch`（含 3 改 + 6 新增，
+**补丁基准 commit：`b6b1b73`**（`docs/56` 引用的快照）。补丁为 `docs/58_T1_code.patch`（含 3 改 + 6 新增，
 40,639 字节 / `b24966bd…`），本机已验证：pre-image 哈希匹配 → `git apply --check` 退 0 → `git apply` 退 0 →
 落地文件（3 个源码 + 6 个新脚本）与上表逐字节一致。完整四样东西见 `docs/59_T1_交付清单.md`。
 
