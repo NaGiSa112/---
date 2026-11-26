@@ -1,0 +1,56 @@
+--- src/cxr/models.py.bak_20261126	2026-11-26 13:48:53.327220400 +0800
++++ src/cxr/models.py	2026-11-26 13:50:11.076696700 +0800
+@@ -196,6 +196,31 @@
+         return z
+ 
+ 
++class _TimmSpatialBackbone(nn.Module):
++    """Adapter for timm backbones that expose neither `.features` nor pooling.
++
++    `CXRNet` needs two things from a backbone: a pooled vector for the default path and
++    the pre-pooling feature map for LSE pooling. torchvision models hand both over via
++    `.features`; timm's RepViT returns a B x C x H x W map from `forward_features` and
++    pools only inside its classifier, so the two accesses are provided here instead of
++    special-casing the callers.
++    """
++
++    def __init__(self, net: nn.Module):
++        super().__init__()
++        self.net = net
++        self.feat_dim = int(net.num_features)
++
++    def features(self, x):
++        f = self.net.forward_features(x)
++        if f.dim() == 4 and f.shape[-1] > f.shape[1]:
++            f = f.permute(0, 3, 1, 2)          # B,H,W,C -> B,C,H,W
++        return f
++
++    def forward(self, x):
++        return self.features(x).mean(dim=(2, 3))
++
++
+ def _build_backbone(arch: str, pretrained: bool, drop_path: float, final_norm: bool = False,
+                     in_ch: int = 1):
+     import torchvision as tv
+@@ -246,6 +271,21 @@
+         net.classifier = nn.Identity()
+         return net, feat_dim
+ 
++    if arch.startswith("repvit"):
++        # RepViT ships only in timm; it has no `.features` and no built-in pooling, and
++        # its `in_chans` path lets timm fold the RGB stem into a single channel.
++        import timm
++
++        if final_norm:
++            raise ValueError("final_norm is currently supported only for ConvNeXt")
++        net = timm.create_model(arch, pretrained=pretrained, num_classes=0, in_chans=in_ch)
++        # RepViT has no stochastic-depth modules and no `drop_path_rate` kwarg, so a
++        # non-zero --drop-path is a no-op here. Record it on the module instead of
++        # silently claiming the protocol was matched: cross-architecture comparisons
++        # must state that this regulariser was inactive.
++        net.cxr_drop_path_ignored = float(drop_path)
++        return _TimmSpatialBackbone(net), int(net.num_features)
++
+     raise ValueError(f"unknown arch {arch}")
+ 
+ 
