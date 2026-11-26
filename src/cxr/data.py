@@ -135,6 +135,13 @@ class CXRDataset(Dataset):
                                       for v in self.df["ViewPosition"]], dtype=np.int64)
             if getattr(cfg, "aux_view_weight", 0.0) > 0:
                 self.aux = self.view_ids
+        # ---- 十类别独立增强：辅助视图策略 ----
+        # 抽样与标签无关（先抽图、再均匀抽类别 k），避免"阳性弱增强/阴性强增强"的捷径。
+        self.aux_branch = bool(getattr(cfg, "aux_branch", False))
+        self.aux_pol = None
+        if self.aux_branch:
+            self.aux_pol = _load_aux_policies(getattr(cfg, "aux_policy", "perclass"),
+                                              getattr(cfg, "aux_policy_json", ""))
 
     def set_epoch(self, epoch: int):
         """Vary the augmentation stream per epoch even when num_workers == 0."""
@@ -148,17 +155,22 @@ class CXRDataset(Dataset):
         h, w = img.shape
         out = self.img_size
         if self.train:
-            for _ in range(10):
-                scale = rs.uniform(cfg.scale_min, 1.0)
-                ratio = rs.uniform(0.85, 1.18)
-                area = h * w * scale
-                ch = int(round(math.sqrt(area / ratio)))
-                cw = int(round(math.sqrt(area * ratio)))
-                if ch <= h and cw <= w:
-                    top = rs.randint(0, h - ch)
-                    left = rs.randint(0, w - cw)
-                    img = img[top:top + ch, left:left + cw]
-                    break
+            # no_crop=True 保留完整画幅：不裁外圈、不改宽高比。
+            # 动机（见 04_新一轮/04_文档/十类别独立数据增强方案）：类 1/6 的判据是心胸比与纵隔宽度，
+            # 类 2/9 依赖肺尖与肋膈角等外围结构，裁剪等于直接切掉证据。
+            if not getattr(cfg, "no_crop", False):
+                for _ in range(10):
+                    scale = rs.uniform(cfg.scale_min, 1.0)
+                    ratio = rs.uniform(float(getattr(cfg, "ratio_min", 0.85)),
+                                       float(getattr(cfg, "ratio_max", 1.18)))
+                    area = h * w * scale
+                    ch = int(round(math.sqrt(area / ratio)))
+                    cw = int(round(math.sqrt(area * ratio)))
+                    if ch <= h and cw <= w:
+                        top = rs.randint(0, h - ch)
+                        left = rs.randint(0, w - cw)
+                        img = img[top:top + ch, left:left + cw]
+                        break
             if rs.random() < cfg.hflip:
                 img = img[:, ::-1]
         t = torch.from_numpy(np.ascontiguousarray(img)).float()[None, None]
@@ -173,6 +185,62 @@ class CXRDataset(Dataset):
                 t = (t - m) * (1.0 + rs.uniform(-cfg.contrast, cfg.contrast)) \
                     + m + rs.uniform(-cfg.brightness, cfg.brightness) * 255.0
         return t
+
+    def _aux_view(self, img: np.ndarray, k: int, view: str, rs: random.Random) -> np.ndarray:
+        """按类别 k 的几何策略，从**原始未增强**缓存图生成一个辅助视图（uint8, out×out）。
+
+        与主分支的区别（遵循方案文档的硬约束）：
+          * 不裁剪、不改宽高比、不擦除、不 mixup —— 保留完整源画幅
+          * 只用等比缩放 + 小角度旋转 + 受限平移，且**一次重采样**完成
+          * 补边用统一暗背景 0，不反射/不复制解剖结构
+          * 平移上限受"旋转后剩余补边余量"钳制，保证源图四角不出界
+        体位回退：只有 AP/PA 用各类上限；LATERAL/LL/未知一律用统一保守参数。
+        水平翻转与主视图同一规则（p=cfg.hflip），B/C 两臂共用，避免多一个未控变量。
+        """
+        out = int(self.img_size)
+        h, w = img.shape
+        if getattr(self.cfg, "hflip", 0.0) > 0 and rs.random() < float(self.cfg.hflip):
+            img = np.ascontiguousarray(img[:, ::-1])
+        pol = self.aux_pol or {}
+        base = pol.get("uniform", {"rot": 2.0, "trans": 0.01, "r": [0.99, 1.0]})
+        g = pol.get("classes", {}).get(k, base)
+        if view not in ("AP", "PA"):
+            g = pol.get("lateral", base)
+
+        theta = math.radians(rs.uniform(-float(g["rot"]), float(g["rot"])))
+        r = rs.uniform(float(g["r"][0]), float(g["r"][1]))
+        trans_max = float(g["trans"])
+
+        c, s = math.cos(theta), math.sin(theta)
+        # 旋转后源图的轴对齐包围盒
+        bw = abs(w * c) + abs(h * s)
+        bh = abs(w * s) + abs(h * c)
+        s_fit = min(out / bw, out / bh)          # 等比缩放，保证四角全进画布
+        scale = s_fit * r
+        if scale <= 0:
+            scale = s_fit
+        # 剩余补边余量（输出像素）——平移不得超过它，否则源角会出界
+        margin_x = max(0.0, (out - bw * scale) / 2.0)
+        margin_y = max(0.0, (out - bh * scale) / 2.0)
+        tx = rs.uniform(-1.0, 1.0) * min(trans_max * out, margin_x)
+        ty = rs.uniform(-1.0, 1.0) * min(trans_max * out, margin_y)
+
+        cx_in, cy_in = w / 2.0, h / 2.0
+        cx_out, cy_out = out / 2.0 - tx, out / 2.0 - ty
+        inv = 1.0 / scale
+        a = c * inv
+        b = s * inv
+        d = -s * inv
+        e = c * inv
+        # PIL AFFINE：(x_in, y_in) = (a u + b v + cc, d u + e v + ff)
+        cc = cx_in - a * cx_out - b * cy_out
+        ff = cy_in - d * cx_out - e * cy_out
+
+        from PIL import Image as _Image
+        src = _Image.fromarray(np.ascontiguousarray(img), mode="L")
+        res = src.transform((out, out), _Image.AFFINE, (a, b, cc, d, e, ff),
+                            resample=_Image.BICUBIC, fillcolor=0)
+        return np.asarray(res, dtype=np.uint8)
 
     def __getitem__(self, i):
         j = i if self.order is None else int(self.order[i])
@@ -198,6 +266,27 @@ class CXRDataset(Dataset):
             a = a / a.std().clamp_min(1e-3)
             x = torch.cat([x, a], dim=0)
         y = torch.zeros(NUM_CLASSES) if self.y is None else torch.from_numpy(self.y[i])
+        # ---- 辅助视图分支：与主分支完全独立的一条返回路径 ----
+        # 每张图以 aux_frac 的概率成为辅助图（不看标签），再均匀抽一个目标类别 k，
+        # 只用该类别的几何策略生成第二视图；返回 6 元组，由 collate 单独路由。
+        if self.aux_branch and self.train:
+            if rs.random() < float(getattr(self.cfg, "aux_frac", 0.25)):
+                k = rs.randrange(NUM_CLASSES)
+                vp = ""
+                if "ViewPosition" in self.df.columns:
+                    vp = str(self.df["ViewPosition"].iloc[i]).strip()
+                aux_np = self._aux_view(img, k, vp, rs)
+                aux_x = torch.from_numpy(aux_np)[None].float()
+                if self.cfg.norm == "per_image":
+                    aux_x = (aux_x - aux_x.mean()) / aux_x.std().clamp_min(1e-3)
+                else:
+                    aux_x = (aux_x - 127.5) / 64.0
+                vid = int(self.view_ids[i]) if self.view_ids is not None else -1
+                return (x, y, torch.tensor(vid), aux_x, torch.tensor(k),
+                        torch.tensor(1.0))
+            vid = int(self.view_ids[i]) if self.view_ids is not None else -1
+            return (x, y, torch.tensor(vid), torch.zeros(1, x.shape[-2], x.shape[-1]),
+                    torch.tensor(0), torch.tensor(0.0))
         if self.aux is not None:
             return x, y, torch.tensor(int(self.aux[i]))
         if self.view_groups:
@@ -269,6 +358,13 @@ def _random_erase(x: torch.Tensor, rs: random.Random, p: float = 0.15) -> torch.
 def collate(batch):
     xs = torch.stack([b[0] for b in batch])
     ys = torch.stack([b[1] for b in batch])
+    if len(batch[0]) == 6:                      # 十类别增强的辅助视图分支
+        # (x, y, view_id, aux_x, aux_k, aux_mask)；未抽中的样本 aux_x 为零图、mask=0
+        views = torch.stack([b[2] for b in batch])
+        aux_x = torch.stack([b[3] for b in batch])
+        aux_k = torch.stack([b[4] for b in batch])
+        aux_m = torch.stack([b[5] for b in batch])
+        return xs, ys, views, aux_x, aux_k, aux_m
     if len(batch[0]) > 4:                       # second view for consistency training
         aux = torch.stack([b[2] for b in batch])
         views = torch.stack([b[3] for b in batch])
@@ -282,3 +378,41 @@ def collate(batch):
             return xs, ys, aux, views
         return xs, ys, aux
     return xs, ys
+
+
+def _load_aux_policies(kind: str, json_path: str = "") -> dict:
+    """读取十类别增强策略。
+
+    kind="uniform"    → B 组对照：统一温和策略（±2°、1%、r 0.99–1.0）
+    kind="perclass"   → C 组候选：读 JSON 的十类策略
+    体位回退两种都共用（方案要求）。
+    """
+    uniform = {"rot": 2.0, "trans": 0.01, "r": [0.99, 1.0]}
+    lateral = {"rot": 0.5, "trans": 0.005, "r": [0.995, 1.0]}
+    if kind == "uniform":
+        return {"classes": {}, "uniform": uniform, "lateral": lateral}
+    if not json_path:
+        json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), "04_新一轮", "04_文档",
+            "十类别增强参数草案_2026-11-25.json")
+    if not os.path.exists(json_path):
+        print(f"[aux] 策略文件缺失，退回统一策略：{json_path}")
+        return {"classes": {}, "uniform": uniform, "lateral": lateral}
+    with open(json_path, encoding="utf-8") as f:
+        d = json.load(f)
+    classes = {}
+    for p in d.get("class_policies", []):
+        g = p.get("geometry", {})
+        classes[int(p["id"]) - 1] = {
+            "rot": float(g.get("rotation_max_deg", 2.0)),
+            "trans": float(g.get("translation_max_fraction", 0.01)),
+            "r": [float(x) for x in g.get("relative_fit_scale_range", [0.99, 1.0])],
+        }
+    fb = d.get("view_fallback", {}).get("lateral_ll_or_unknown", {})
+    if fb:
+        lateral = {"rot": float(fb.get("rotation_max_deg", 0.5)),
+                   "trans": float(fb.get("translation_max_fraction", 0.005)),
+                   "r": [float(x) for x in fb.get("relative_fit_scale_range", [0.995, 1.0])]}
+    print(f"[aux] 已载入十类策略 {len(classes)} 类；体位回退 rot±{lateral['rot']}° "
+          f"trans {lateral['trans']:.1%}")
+    return {"classes": classes, "uniform": uniform, "lateral": lateral}

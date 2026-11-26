@@ -177,7 +177,7 @@ def main() -> None:
 
     # 添加：候选按 w 并入，其余按比例缩到 1-w
     add = []
-    for w in (0.05, 0.10, 0.15, 0.20):
+    for w in (0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60):
         wts = {k: v * (1 - w) for k, v in base_w.items()}
         wts[a.name] = w
         pooled = dict(per)

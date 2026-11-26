@@ -142,7 +142,17 @@ class TrainConfig:
     label_blend_48: float = 0.0     # >0: 训练目标在类4↔类8之间互混（0=关闭）
     init_weights: str = ""         # 用外部主干权重初始化（只替换 backbone，分类头保持本次随机初始化）
     cache_dir: str = ""             # 换预处理变体缓存目录（空=默认 cache/）         # 从 cache_jpg/ 读 JPEG（远程低带宽场景）
+    no_crop: bool = False           # True=训练时不裁剪，保留完整画幅（几何保护实验）
+    ratio_min: float = 0.85         # 训练裁剪的宽高比下界（no_crop=True 时忽略）
+    ratio_max: float = 1.18         # 训练裁剪的宽高比上界
     fold_csv: str = ""              # 外部折表(Study_id,fold)；给了就用它代替 cv_folds
+    # ---- 十类别独立增强的辅助分支（见 04_新一轮/04_文档/十类别独立数据增强方案）----
+    aux_branch: bool = False        # True=启用辅助视图分支；默认关闭，主路径完全不变
+    aux_frac: float = 0.25          # 每张图成为辅助视图的概率（与标签无关）
+    aux_weight: float = 0.20        # 辅助项损失权重
+    aux_policy: str = "perclass"    # "perclass"=读 JSON 的十类策略；"uniform"=B 组统一温和策略
+    aux_policy_json: str = ""       # 策略 JSON；空=用 04_文档 下的默认草案
+    aux_load_weight: float = 0.0    # >0: 从 --init-weights 载入 last12 权重后仅微调（续训用）
     train_folds: str = "0,1,2"
     valid_fold: int = 3
     cv_folds: int = 0               # >1: patient-grouped k-fold on train.csv

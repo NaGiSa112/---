@@ -413,12 +413,27 @@ def train(cfg: TrainConfig):
         run_loss = 0.0
         n_batches = 0
         for it, batch in enumerate(dl_tr, 1):
-            x, y = batch[0].to(device, non_blocking=True), batch[1].to(device, non_blocking=True)
-            x2 = batch[4].to(device, non_blocking=True) if len(batch) > 4 else None
-            v = batch[2].to(device, non_blocking=True) if len(batch) > 2 else None
-            view_in = batch[3].to(device, non_blocking=True) if len(batch) > 3 else None
-            if v is not None and (v < 0).all():      # aux disabled, view is an input
+            # ---- 十类别增强：6 元组走独立路径，主路径代码完全不变 ----
+            # (x, y, view_id, aux_x, aux_k, aux_mask)
+            if getattr(cfg, "aux_branch", False) and len(batch) == 6:
+                x = batch[0].to(device, non_blocking=True)
+                y = batch[1].to(device, non_blocking=True)
+                view_in = batch[2].to(device, non_blocking=True)
+                aux_x = batch[3].to(device, non_blocking=True)
+                aux_k = batch[4].to(device, non_blocking=True).long()
+                aux_mask = batch[5].to(device, non_blocking=True).float()
+                x2 = None
                 v = None
+                y_src = y.clone()          # mixup 之前的源标签副本（辅助项专用）
+            else:
+                x, y = batch[0].to(device, non_blocking=True), batch[1].to(device, non_blocking=True)
+                aux_x = aux_k = aux_mask = None
+                y_src = None
+                x2 = batch[4].to(device, non_blocking=True) if len(batch) > 4 else None
+                v = batch[2].to(device, non_blocking=True) if len(batch) > 2 else None
+                view_in = batch[3].to(device, non_blocking=True) if len(batch) > 3 else None
+                if v is not None and (v < 0).all():      # aux disabled, view is an input
+                    v = None
             if cfg.mixup > 0 and cfg.cutmix > 0:
                 if random.random() < 0.5:
                     x, y = _mixup(x, y, cfg.mixup)
@@ -430,6 +445,9 @@ def train(cfg: TrainConfig):
                 x, y = _cutmix(x, y, cfg.cutmix)
             if cfg.label_smooth > 0:
                 y = y * (1 - cfg.label_smooth) + 0.5 * cfg.label_smooth
+                if y_src is not None:
+                    # 两组共用同一平滑，保证辅助目标与主目标同口径
+                    y_src = y_src * (1 - cfg.label_smooth) + 0.5 * cfg.label_smooth
             with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=amp_dtype is not None):
                 if v is not None and cfg.aux_view_weight > 0:
                     logits, aux = model(x, return_aux=True, view=view_in)
@@ -437,6 +455,22 @@ def train(cfg: TrainConfig):
                 else:
                     logits = model(x, view=view_in)
                     loss = criterion(logits.float(), y)
+                if aux_x is not None and float(getattr(cfg, "aux_weight", 0.0)) > 0 \
+                        and float(aux_mask.sum()) > 0:
+                    # 辅助项：每张辅助图只监督它被指定的那一类，逐张 BCE 后取均值。
+                    # 注意不能把其余九类 mask 成 0 后对整个 B×10 求均值，那会稀释 10 倍。
+                    # 计算量：先把命中的样本挑出来再前向。25% 抽样就该只付 25% 的算力，
+                    # 否则整批 16 张都要过一遍前向，抽样等于没省。
+                    hit = aux_mask > 0
+                    ax = aux_x[hit]
+                    ak = aux_k[hit].clamp(0, 9).view(-1, 1)
+                    av = view_in[hit] if view_in is not None else None
+                    logits_aux = model(ax, view=av).float()
+                    sel = torch.gather(logits_aux, 1, ak).squeeze(1)
+                    tgt = torch.gather(y_src[hit], 1, ak).squeeze(1)
+                    l_aux = torch.nn.functional.binary_cross_entropy_with_logits(
+                        sel, tgt, reduction="mean")
+                    loss = loss + float(cfg.aux_weight) * l_aux
                 if getattr(cfg, "rank_weight", 0.0) > 0:
                     loss = loss + float(cfg.rank_weight) * pairwise_auc_loss(
                         torch.sigmoid(logits.float()), y)
@@ -580,6 +614,20 @@ def parse_args():
                     help="训练目标在类4↔类8之间互混的权重（0=关闭）")
     ap.add_argument("--lse-tau", type=float, default=1.0)
     ap.add_argument("--cache-dir", default="", help="预处理变体缓存目录（CLAHE/裁剪），空=默认 cache/")
+    # 几何保护实验：类 1/6 的判据是心胸比与纵隔宽度，类 2/9 依赖肺尖与肋膈角，
+    # 训练时的随机裁剪（面积 0.75–1.0、比例 0.85–1.18）会切掉这些外围证据。
+    ap.add_argument("--no-crop", action="store_true",
+                    help="训练时不裁剪，保留完整画幅（默认关闭=沿用现有裁剪）")
+    ap.add_argument("--ratio-min", type=float, default=0.85, help="裁剪宽高比下界（默认 0.85）")
+    ap.add_argument("--ratio-max", type=float, default=1.18, help="裁剪宽高比上界（默认 1.18）")
+    # ---- 十类别独立增强的辅助分支（默认全关，主路径不变）----
+    ap.add_argument("--aux-branch", action="store_true",
+                    help="启用辅助视图分支（每图 25%% 概率、先抽图后均匀抽类别）")
+    ap.add_argument("--aux-frac", type=float, default=0.25, help="辅助视图比例（默认 0.25）")
+    ap.add_argument("--aux-weight", type=float, default=0.20, help="辅助项损失权重（默认 0.20）")
+    ap.add_argument("--aux-policy", default="perclass", choices=["perclass", "uniform"],
+                    help="perclass=C 组十类策略；uniform=B 组统一温和策略")
+    ap.add_argument("--aux-policy-json", default="", help="策略 JSON 路径（空=用 04_文档 草案）")
     ap.add_argument("--jpg-cache", action="store_true",
                     help="从 cache_jpg/ 读 JPEG 缓存（上传带宽受限的远程训练）")
     ap.add_argument("--fold-csv", default="",

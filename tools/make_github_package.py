@@ -110,6 +110,13 @@ FILES = [
     ("reports/FINAL_PACKAGE_VERIFY_2026-11-13_第二轮.md", "results/FINAL_PACKAGE_VERIFY_2.md"),
     ("reports/测试结果_基线差与延迟_2026-11-25.md", "docs/55_测试结果.md"),
     ("reports/baseline_gap.json", "results/baseline_gap.json"),
+    # ---- 队友任务卡（2026-11-26）----
+    (r"04_新一轮/队友任务/README.md", "TASKS/README.md"),
+    (r"04_新一轮/队友任务/T1_6GB异构骨干筛查.md", "TASKS/T1_6GB异构骨干筛查.md"),
+    (r"04_新一轮/队友任务/T2_异构成员测试协议.md", "TASKS/T2_异构成员测试协议.md"),
+    (r"04_新一轮/队友任务/T3_类1共享头小试.md", "TASKS/T3_类1共享头小试.md"),
+    # ---- 队友任务的长文（原先只在仓库里，纳入源以免重建时丢失）----
+    (r"04_新一轮/04_文档/双6GB异构模型筛查与类1专家方案_2026-11-26.md", "docs/56_双6GB异构模型筛查与类1专家方案.md"),
     # ---- 小数据 ----
     ("04_新一轮/00_规则/patient_folds_5f.json", "data/patient_folds_5f.json"),
     ("04_新一轮/初赛前100名_2026-11-21.csv", "data/初赛前100名.csv"),

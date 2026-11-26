@@ -172,6 +172,8 @@ python tools/compare_folds.py --tag asym --folds 0,1,2,3,4 --boot 2000
 
 | 想了解 | 看 |
 |---|---|
+| **给队友的任务卡** | [`TASKS/README.md`](TASKS/README.md)（异构骨干筛查 / 异构成员测试协议 / 类 1 小试） |
+| 异构成员怎么测、怎么交 | [`TASKS/T2_异构成员测试协议.md`](TASKS/T2_异构成员测试协议.md) |
 | **一页看全项目（数据/训练/推理）** | [`docs/53_总复盘.md`](docs/53_总复盘.md) |
 | 下一步计划与预算 | [`docs/00b_后续计划总览.md`](docs/00b_后续计划总览.md) |
 | 现在做到哪、下一步 | [`docs/00_进度总结.md`](docs/00_进度总结.md) |

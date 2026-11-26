@@ -241,8 +241,8 @@
  },
  {
   "path": "docs/46_国赛提交阶梯.md",
-  "bytes": 5690,
-  "sha256": "645e7b883e954044efe435d5d3e5df510521022a318d62324d2053d155d81261",
+  "bytes": 6275,
+  "sha256": "3ebc21bb23e04f2975113e17cb9b7518fadf62c01c56f722720ecc9a0dc242e1",
   "src": "04_新一轮/国赛7天提交阶梯_2026-11-23.md"
  },
  {
@@ -307,8 +307,8 @@
  },
  {
   "path": "tools/e1_score_v2.py",
-  "bytes": 10361,
-  "sha256": "ad923aaf6322dc932b509e498fb6f86aa289c0b4785f0f702c685af5dc5083e7",
+  "bytes": 10658,
+  "sha256": "124841a5eda3820cbea6b9c56edceaa505f1974aaf045756edb80acb7e90c603",
   "src": "tools/e1_score_v2.py"
  },
  {
@@ -466,6 +466,36 @@
   "bytes": 1372,
   "sha256": "f999ee86e40a4cb71b9a8ecf1bb4aa4767cf6db50e6242e821dc149441b20156",
   "src": "reports/baseline_gap.json"
+ },
+ {
+  "path": "TASKS/README.md",
+  "bytes": 3849,
+  "sha256": "7e0ccaebd70ee42a714410e7210d953d97d65f3aa445978b7ada28501b12a109",
+  "src": "04_新一轮/队友任务/README.md"
+ },
+ {
+  "path": "TASKS/T1_6GB异构骨干筛查.md",
+  "bytes": 3798,
+  "sha256": "7ceeae0ba50282f7555de22740c32f150cabd264494858a627924d9a43dbc617",
+  "src": "04_新一轮/队友任务/T1_6GB异构骨干筛查.md"
+ },
+ {
+  "path": "TASKS/T2_异构成员测试协议.md",
+  "bytes": 5956,
+  "sha256": "ee7051a74b8e00ac954935d7a0dd7b61321e94173119ad110ffa9c5420e762a6",
+  "src": "04_新一轮/队友任务/T2_异构成员测试协议.md"
+ },
+ {
+  "path": "TASKS/T3_类1共享头小试.md",
+  "bytes": 3111,
+  "sha256": "e4f55feae7b8ba9364da4a73482bb7df518af0e985f78b855b6d59bf267d1b01",
+  "src": "04_新一轮/队友任务/T3_类1共享头小试.md"
+ },
+ {
+  "path": "docs/56_双6GB异构模型筛查与类1专家方案.md",
+  "bytes": 11439,
+  "sha256": "aa6f672100ef87149cb94851bb06e77ed7ae497c8a6a4acb9c0150754bcf458f",
+  "src": "04_新一轮/04_文档/双6GB异构模型筛查与类1专家方案_2026-11-26.md"
  },
  {
   "path": "data/patient_folds_5f.json",
@@ -733,8 +763,8 @@
  },
  {
   "path": "tools/make_github_package.py",
-  "bytes": 12212,
-  "sha256": "08a8a164b966122493b8f571e4d2bdc7a6228cd6e8f730e5fea9cd7acc310231",
+  "bytes": 12882,
+  "sha256": "431a82e78a7fb54288299bb53f18fc3e8485c46fa48bbee8d572e1c572ead032",
   "src": "tools/make_github_package.py"
  },
  {
@@ -745,8 +775,8 @@
  },
  {
   "path": "src/cxr/config.py",
-  "bytes": 7300,
-  "sha256": "7d620f65243825d39f9c027e7b452cfadf1874d4df60067d80a0dd4e9e32d33f",
+  "bytes": 8272,
+  "sha256": "bcc30bdfb8efc5240465196779407a0e55e7176d51b0fe81b875d27f52bd7e36",
   "src": "src/cxr/config.py"
  },
  {
@@ -757,8 +787,8 @@
  },
  {
   "path": "src/cxr/data.py",
-  "bytes": 14686,
-  "sha256": "d3406fa325d64d9d124b7a9d17d96101a502886f9a1a1553891546be3425cddf",
+  "bytes": 22354,
+  "sha256": "da1ded897384f14c0733343fbd71db42a017954377f5d226513cf158ac17f74a",
   "src": "src/cxr/data.py"
  },
  {
@@ -775,8 +805,8 @@
  },
  {
   "path": "src/cxr/train.py",
-  "bytes": 31413,
-  "sha256": "f0ab6d2751d6699b2c0da0d1f17cb3569f2990c0d61cb76b3665c16a8071ca68",
+  "bytes": 35065,
+  "sha256": "d5bd08bcf143a37ea572b31b303c66a0b50a46429be2a9fb1deb36f225e6073f",
   "src": "src/cxr/train.py"
  },
  {

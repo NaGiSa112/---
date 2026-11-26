@@ -1,19 +1,24 @@
 # MANIFEST
 
-共 **135** 个文件，合计 **5754.8 KB**。
+共 **140** 个文件，合计 **5795.8 KB**。
 
 | 目录 | 文件数 | 大小 |
 |---|---:|---:|
+| `TASKS/` | 4 | 16.3 KB |
 | `data/` | 9 | 4995.2 KB |
-| `docs/` | 49 | 299.8 KB |
+| `docs/` | 50 | 311.6 KB |
 | `results/` | 21 | 39.4 KB |
-| `src/` | 12 | 117.3 KB |
-| `tools/` | 44 | 302.9 KB |
+| `src/` | 12 | 129.3 KB |
+| `tools/` | 44 | 303.9 KB |
 
 ## 逐文件 SHA-256
 
 | 文件 | 字节 | SHA-256 |
 |---|---:|---|
+| `TASKS/README.md` | 3849 | `7e0ccaebd70ee42a714410e7210d953d…` |
+| `TASKS/T1_6GB异构骨干筛查.md` | 3798 | `7ceeae0ba50282f7555de22740c32f15…` |
+| `TASKS/T2_异构成员测试协议.md` | 5956 | `ee7051a74b8e00ac954935d7a0dd7b61…` |
+| `TASKS/T3_类1共享头小试.md` | 3111 | `e4f55feae7b8ba9364da4a73482bb7df…` |
 | `data/map_agreement.csv` | 1030 | `11aafe376e8b26f9b66c37f984bc3bfd…` |
 | `data/patient_folds_5f.csv` | 536906 | `5b0cf113345adb4385089a8ee694dad6…` |
 | `data/patient_folds_5f.json` | 1394 | `14e5179e28d5fa15c1ee06e36c30d884…` |
@@ -62,7 +67,7 @@
 | `docs/44_GPU预算重排.md` | 5933 | `f8c6a69a603879293511d67770fcfd4c…` |
 | `docs/44b_GPU240小时编排.md` | 4964 | `0b6358769a13d5af3e8f44ab52cb7148…` |
 | `docs/45_冲分方案.md` | 5672 | `67c5fa914fc0e2be9be750501ca19578…` |
-| `docs/46_国赛提交阶梯.md` | 5690 | `645e7b883e954044efe435d5d3e5df51…` |
+| `docs/46_国赛提交阶梯.md` | 6275 | `3ebc21bb23e04f2975113e17cb9b7518…` |
 | `docs/47_成员强度.md` | 1908 | `4138677a255137632d0ca274256c1f4f…` |
 | `docs/48_魔搭候选主干.md` | 5095 | `0793c80859975f2d1bd26109c4d7cbdb…` |
 | `docs/49_CAFormer与Transformer.md` | 5649 | `31c90e699bfa7d792db175512b66d0e1…` |
@@ -72,6 +77,7 @@
 | `docs/53_总复盘.md` | 13217 | `dd6f702210516e7abe47e36d5c4312e9…` |
 | `docs/54_全部模型排名.md` | 4363 | `53d8dd112e9a3f0c2c97cfa70a237859…` |
 | `docs/55_测试结果.md` | 5570 | `bc5d470e58ec77719c4543fbb5bf9b32…` |
+| `docs/56_双6GB异构模型筛查与类1专家方案.md` | 11439 | `aa6f672100ef87149cb94851bb06e77e…` |
 | `results/E1E2v1_caformer.json` | 1109 | `0d0188c594a2b309d0e3cea8a445b6e5…` |
 | `results/E1E2v1_caformer.md` | 1358 | `05b1de36917a9d1c3187909ea02a1d25…` |
 | `results/E1E2v2_caformer.json` | 1230 | `30e0276dd8436c74cfbe5cecabe56c41…` |
@@ -96,13 +102,13 @@
 | `src/build_cache.py` | 791 | `1a978d8a8749ad4dbef1e42d5b565ab7…` |
 | `src/cxr/__init__.py` | 91 | `14a82081cb0b747b1a381eb6f55c3838…` |
 | `src/cxr/cache.py` | 4239 | `94ba1622f80fc7e113985dd3bc2945e4…` |
-| `src/cxr/config.py` | 7300 | `7d620f65243825d39f9c027e7b452cfa…` |
-| `src/cxr/data.py` | 14686 | `d3406fa325d64d9d124b7a9d17d96101…` |
+| `src/cxr/config.py` | 8272 | `bcc30bdfb8efc5240465196779407a0e…` |
+| `src/cxr/data.py` | 22354 | `da1ded897384f14c0733343fbd71db42…` |
 | `src/cxr/deploy.py` | 15971 | `1e01dd7eb8e1a1b7912c443dc09f97ef…` |
 | `src/cxr/infer.py` | 14399 | `a978a1a9fd55012eddfaea7e5b1737d8…` |
 | `src/cxr/metrics.py` | 2945 | `1e256403cba013531a2295abcb66faae…` |
 | `src/cxr/models.py` | 19733 | `f4da0a59cb9dbabd60a3372c3328866a…` |
-| `src/cxr/train.py` | 31413 | `f0ab6d2751d6699b2c0da0d1f17cb356…` |
+| `src/cxr/train.py` | 35065 | `d5bd08bcf143a37ea572b31b303c66a0…` |
 | `src/evaluate.py` | 4125 | `a8f4120c1847011f5491d35980bebe55…` |
 | `src/predict.py` | 4449 | `cb3ff45ed22aa3bc2c6117a65289e61e…` |
 | `tools/ablate_border.py` | 6134 | `b7e7492c10c2be89f59814292dac4a6c…` |
@@ -127,12 +133,12 @@
 | `tools/e0_adapter_check.py` | 3781 | `da75f9f4bd6df9c9fe49e811f62d46a0…` |
 | `tools/e1_local_queue.py` | 9109 | `244e8a23aa6a4eb50242fcfccf992566…` |
 | `tools/e1_score.py` | 10574 | `c263f827ff4dd2ed781b1d229c325e1c…` |
-| `tools/e1_score_v2.py` | 10361 | `ad923aaf6322dc932b509e498fb6f86a…` |
+| `tools/e1_score_v2.py` | 10658 | `124841a5eda3820cbea6b9c56edceaa5…` |
 | `tools/eval_fold_bagging.py` | 8175 | `680827bb9e6114ea772d06c080f22bfe…` |
 | `tools/evidence_outside_body.py` | 7984 | `28d980aaace7ac26966b3582e7848dc5…` |
 | `tools/fit_per_class_shrink.py` | 7149 | `55f4b8279283d3cac7a205a11135e570…` |
 | `tools/heatmap_probe.py` | 9943 | `86e955171be3b74dc0366c51111df959…` |
-| `tools/make_github_package.py` | 12212 | `08a8a164b966122493b8f571e4d2bdc7…` |
+| `tools/make_github_package.py` | 12882 | `431a82e78a7fb54288299bb53f18fc3e…` |
 | `tools/make_heatmap_compare.py` | 7137 | `7f06edb250a79802d39557775dc89718…` |
 | `tools/make_patient_folds.py` | 6486 | `08e2d30eb099bf4f42aa1e8b0b33fbd4…` |
 | `tools/make_probs_from_ckpt.py` | 4243 | `7ce510d06c07315183ce8fec38ac058b…` |
