@@ -1,24 +1,24 @@
 # MANIFEST
 
-共 **140** 个文件，合计 **5795.8 KB**。
+共 **141** 个文件，合计 **5807.1 KB**。
 
 | 目录 | 文件数 | 大小 |
 |---|---:|---:|
-| `TASKS/` | 4 | 16.3 KB |
+| `TASKS/` | 4 | 18.8 KB |
 | `data/` | 9 | 4995.2 KB |
-| `docs/` | 50 | 311.6 KB |
+| `docs/` | 51 | 320.2 KB |
 | `results/` | 21 | 39.4 KB |
-| `src/` | 12 | 129.3 KB |
-| `tools/` | 44 | 303.9 KB |
+| `src/` | 12 | 129.4 KB |
+| `tools/` | 44 | 304.0 KB |
 
 ## 逐文件 SHA-256
 
 | 文件 | 字节 | SHA-256 |
 |---|---:|---|
-| `TASKS/README.md` | 3849 | `7e0ccaebd70ee42a714410e7210d953d…` |
-| `TASKS/T1_6GB异构骨干筛查.md` | 3798 | `7ceeae0ba50282f7555de22740c32f15…` |
-| `TASKS/T2_异构成员测试协议.md` | 5956 | `ee7051a74b8e00ac954935d7a0dd7b61…` |
-| `TASKS/T3_类1共享头小试.md` | 3111 | `e4f55feae7b8ba9364da4a73482bb7df…` |
+| `TASKS/README.md` | 4305 | `be9e27846b035b408265a453ad63b716…` |
+| `TASKS/T1_6GB异构骨干筛查.md` | 4274 | `e7e85751686cba32303674e99a67a4fa…` |
+| `TASKS/T2_异构成员测试协议.md` | 6785 | `d55d66b60b8841f92ad3822970103f6b…` |
+| `TASKS/T3_类1共享头小试.md` | 3927 | `57c8f0ba3f262e88f7cd82786c723d60…` |
 | `data/map_agreement.csv` | 1030 | `11aafe376e8b26f9b66c37f984bc3bfd…` |
 | `data/patient_folds_5f.csv` | 536906 | `5b0cf113345adb4385089a8ee694dad6…` |
 | `data/patient_folds_5f.json` | 1394 | `14e5179e28d5fa15c1ee06e36c30d884…` |
@@ -78,6 +78,7 @@
 | `docs/54_全部模型排名.md` | 4363 | `53d8dd112e9a3f0c2c97cfa70a237859…` |
 | `docs/55_测试结果.md` | 5570 | `bc5d470e58ec77719c4543fbb5bf9b32…` |
 | `docs/56_双6GB异构模型筛查与类1专家方案.md` | 11439 | `aa6f672100ef87149cb94851bb06e77e…` |
+| `docs/57_类1专家方案.md` | 8864 | `d06e44f3aa589027dae52ecb89f52004…` |
 | `results/E1E2v1_caformer.json` | 1109 | `0d0188c594a2b309d0e3cea8a445b6e5…` |
 | `results/E1E2v1_caformer.md` | 1358 | `05b1de36917a9d1c3187909ea02a1d25…` |
 | `results/E1E2v2_caformer.json` | 1230 | `30e0276dd8436c74cfbe5cecabe56c41…` |
@@ -108,7 +109,7 @@
 | `src/cxr/infer.py` | 14399 | `a978a1a9fd55012eddfaea7e5b1737d8…` |
 | `src/cxr/metrics.py` | 2945 | `1e256403cba013531a2295abcb66faae…` |
 | `src/cxr/models.py` | 19733 | `f4da0a59cb9dbabd60a3372c3328866a…` |
-| `src/cxr/train.py` | 35065 | `d5bd08bcf143a37ea572b31b303c66a0…` |
+| `src/cxr/train.py` | 35165 | `8ca550b0f4172d8428f6f17bf2130fb3…` |
 | `src/evaluate.py` | 4125 | `a8f4120c1847011f5491d35980bebe55…` |
 | `src/predict.py` | 4449 | `cb3ff45ed22aa3bc2c6117a65289e61e…` |
 | `tools/ablate_border.py` | 6134 | `b7e7492c10c2be89f59814292dac4a6c…` |
@@ -138,7 +139,7 @@
 | `tools/evidence_outside_body.py` | 7984 | `28d980aaace7ac26966b3582e7848dc5…` |
 | `tools/fit_per_class_shrink.py` | 7149 | `55f4b8279283d3cac7a205a11135e570…` |
 | `tools/heatmap_probe.py` | 9943 | `86e955171be3b74dc0366c51111df959…` |
-| `tools/make_github_package.py` | 12882 | `431a82e78a7fb54288299bb53f18fc3e…` |
+| `tools/make_github_package.py` | 12968 | `0d3e4fc67d83bd637a8578e7e4eeceb8…` |
 | `tools/make_heatmap_compare.py` | 7137 | `7f06edb250a79802d39557775dc89718…` |
 | `tools/make_patient_folds.py` | 6486 | `08e2d30eb099bf4f42aa1e8b0b33fbd4…` |
 | `tools/make_probs_from_ckpt.py` | 4243 | `7ce510d06c07315183ce8fec38ac058b…` |

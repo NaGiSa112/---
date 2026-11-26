@@ -590,6 +590,7 @@ def parse_args():
     ap.add_argument("--rbc-prob", type=float, default=0.25)
     ap.add_argument("--rot-deg", type=float, default=7.0)
     ap.add_argument("--scale-min", type=float, default=0.75)
+    ap.add_argument("--hflip", type=float, default=0.5, help="水平翻转概率（默认 0.5）")
     ap.add_argument("--amp", default="bf16", choices=["bf16", "fp16", "fp32"],
                     help="bf16 需要 Ampere+；V100(Tesla) 只支持 fp16，会自动启用 GradScaler")
     ap.add_argument("--distill-csv", default="", help="老师软标签 CSV（Dicom_id + p1..p10）")
